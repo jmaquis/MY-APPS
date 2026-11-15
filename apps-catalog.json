@@ -21,15 +21,5 @@
       "source_sha256": "5614489de6140d64b54468f8f188d59e5cf6c71983fb45228ab74b9762d49031",
       "tag": "catalogue-5b54eba31d46b0ebb83c30e9"
     },
-    {
-      "id": "carnet-de-sante-2",
-      "name": "Carnet de santé",
-      "version": "1.0.0",
-      "asset": "carnet-de-sante-2-1.0.0.zip",
-      "sha256": "8706d81ff08a154afa5734127c5847af9335e4102e25da88f8802ce13ee174dd",
-      "source_file": "Carnet_de_sante (2).html",
-      "source_sha256": "9e3b92ff241a3819159a076669c9a11793292412c5a6847220a5e08c65d87d01",
-      "tag": "catalogue-eb5fa4d610490f6af464def6"
-    }
   ]
 }
