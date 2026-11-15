@@ -1,16 +1,7 @@
 {
   "schema": 1,
-  "apps": [
-    {
-      "id": "carnet-auto-1-1",
-      "name": "Octane — Mon carnet auto",
-      "version": "1.0.2",
-      "asset": "carnet-auto-1-1-1.0.2.zip",
-      "sha256": "af6541aafe5db83dd1234d625cdade6008ba25bfbaed9cf6ddd2337811d3b8ad",
-      "source_file": "Carnet_Auto(1) (1).html",
-      "source_sha256": "70b3f1089efeb5ec0de2acd327af5379fafba28517c0654e7a290a2af00dddfb",
-      "source_blob_sha": "f548a4c0cbce84fa1e8fb91cb701d3c62cc34928",
-      "tag": "catalogue-56ef5b8d5d5d3347850f8941"
-    }
-  ]
+  "apps": [],
+  "retired": {
+    "carnet-auto-1-1": "1.0.2"
+  }
 }
