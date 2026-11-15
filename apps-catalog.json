@@ -4,13 +4,13 @@
     {
       "id": "carnet-auto-1-1",
       "name": "Octane — Mon carnet auto",
-      "version": "1.0.0",
-      "asset": "carnet-auto-1-1-1.0.0.zip",
-      "sha256": "4976c24155f50237d10b940139b72cb8828a6a72781d458d00d8f11cff61266e",
+      "version": "1.0.1",
+      "asset": "carnet-auto-1-1-1.0.1.zip",
+      "sha256": "9cfd13051e4249bb91e0cd9b070200793e1c74a923ace08544cd802ccf3acf36",
       "source_file": "Carnet_Auto(1) (1).html",
-      "source_sha256": "989f30ede0e5d464e0c4922b5f6d793279d001e14b2d0c25a05388a3eae03209",
-      "source_blob_sha": "0697f2b362445f168de101192c7c27de1d1563fa",
-      "tag": "catalogue-04371b89490d27a3b1785eab"
+      "source_sha256": "011f46d770c7dec6174943e1a2c8fb97bea4feb0ef114c4fbfed19960527ec4f",
+      "source_blob_sha": "e69ae16808c4597f065051a66b3e6a24bcdcfbaf",
+      "tag": "catalogue-c44eb11a4194454bf3969300"
     }
   ],
   "retired": {
