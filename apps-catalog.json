@@ -10,6 +10,16 @@
       "source_file": "Carnet_Auto.html",
       "source_sha256": "5614489de6140d64b54468f8f188d59e5cf6c71983fb45228ab74b9762d49031",
       "tag": "catalogue-5b54eba31d46b0ebb83c30e9"
+    },
+    {
+      "id": "carnet-de-sante-2",
+      "name": "Carnet de santé",
+      "version": "1.0.0",
+      "asset": "carnet-de-sante-2-1.0.0.zip",
+      "sha256": "e042c7503268254f9f7d2d35db9607ef1614bee0e2688c4a398f3074f745af22",
+      "source_file": "Carnet_de_sante(2).html",
+      "source_sha256": "b29dda1b3605db2e56dce1ba84fe4b46dfc9da2241ec406ee3bfb6b0ca0ad05d",
+      "tag": "catalogue-23762424b925250a247d8b13"
     }
   ]
 }
