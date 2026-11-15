@@ -20,6 +20,7 @@ $manifestName = 'my-apps.json'
 $githubRefsUrl = 'https://github.com/jmaquis/MY-APPS.git/info/refs?service=git-upload-pack'
 $githubBranchRefUrl = 'https://api.github.com/repos/jmaquis/MY-APPS/git/ref/heads/main'
 $githubTreesUrl = 'https://api.github.com/repos/jmaquis/MY-APPS/git/trees'
+$githubCatalogContentsUrl = 'https://api.github.com/repos/jmaquis/MY-APPS/contents/apps-catalog.json'
 $githubRawUrl = 'https://raw.githubusercontent.com/jmaquis/MY-APPS'
 $githubReleasesUrl = 'https://github.com/jmaquis/MY-APPS/releases/download'
 $githubLauncherReleaseUrl = 'https://api.github.com/repos/jmaquis/MY-APPS/releases/latest'
@@ -596,6 +597,28 @@ function Read-GitHubCatalog([string]$json) {
     [pscustomobject]@{ Apps = $entries; Retired = $retired }
 }
 
+function Read-GitHubCatalogResponse([string]$response, [bool]$usesContentsApi) {
+    if ($usesContentsApi) {
+        $file = ConvertFrom-Json -InputObject $response
+        if ($file.encoding -cne 'base64' -or $file.content -isnot [string] -or
+            $file.size -lt 1 -or $file.size -gt 512KB -or $file.content.Length -gt 768KB) {
+            throw "Le format du fichier renvoyé par l’API GitHub est invalide."
+        }
+        $bytes = [Convert]::FromBase64String($file.content)
+        if ($bytes.Length -ne $file.size) { throw "Le fichier renvoyé par l’API GitHub est incomplet." }
+        $response = [Text.UTF8Encoding]::new($false, $true).GetString($bytes)
+    }
+    Read-GitHubCatalog ($response.TrimStart([char]0xFEFF))
+}
+
+function Get-GitHubRequestError($exception) {
+    $cause = $exception.GetBaseException()
+    if ($cause -is [OperationCanceledException]) {
+        return 'La requête a expiré avant la réponse de GitHub.'
+    }
+    $cause.Message
+}
+
 function Update-GitHubApplications($catalog, [string]$treeJson) {
     $tree = ConvertFrom-Json -InputObject $treeJson
     if ($tree.truncated -ne $false -or $tree.tree -isnot [array]) {
@@ -735,15 +758,26 @@ function Receive-GitHubResults {
                 if ($revision -cne $script:githubCatalogRevision) {
                     $script:githubSnapshot = @{
                         Revision = $revision
-                        Catalog = $catalogHttp.GetStringAsync("$githubRawUrl/$revision/apps-catalog.json")
+                        Catalog = $catalogHttp.GetStringAsync("${githubCatalogContentsUrl}?ref=$revision")
+                        CatalogApiError = ''
                         Tree = $catalogHttp.GetStringAsync("$githubTreesUrl/${revision}?recursive=1")
                     }
                     return
                 }
             } else {
-                $script:githubSnapshot = $null
                 $stage = 'catalogue des applications'
-                $catalog = Read-GitHubCatalog ($snapshot.Catalog.GetAwaiter().GetResult())
+                try {
+                    $catalog = Read-GitHubCatalogResponse ($snapshot.Catalog.GetAwaiter().GetResult()) (-not $snapshot.CatalogApiError)
+                } catch {
+                    $detail = Get-GitHubRequestError $_.Exception
+                    if ($snapshot.CatalogApiError) {
+                        throw "api.github.com : $($snapshot.CatalogApiError) raw.githubusercontent.com : $detail"
+                    }
+                    $snapshot.CatalogApiError = $detail
+                    $snapshot.Catalog = $catalogHttp.GetStringAsync("$githubRawUrl/$($snapshot.Revision)/apps-catalog.json")
+                    return
+                }
+                $script:githubSnapshot = $null
                 $stage = 'dossier applications'
                 Update-GitHubApplications $catalog ($snapshot.Tree.GetAwaiter().GetResult())
                 $script:githubCatalogRevision = $snapshot.Revision
@@ -755,7 +789,8 @@ function Receive-GitHubResults {
                 $script:githubCatalogState = 'Catalogue GitHub à jour.'
             }
         } catch {
-            $detail = $_.Exception.GetBaseException().Message
+            $script:githubSnapshot = $null
+            $detail = Get-GitHubRequestError $_.Exception
             $script:githubCatalogState = "Synchronisation GitHub impossible ($stage). $detail"
             if (-not $script:githubManualRefresh -and -not $changed -and $script:githubCatalogRevision) {
                 $script:githubCatalogState = "$($script:githubCatalogState) Le dernier catalogue chargé reste affiché."
