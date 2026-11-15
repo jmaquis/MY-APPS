@@ -24,6 +24,8 @@ Les mises à jour du catalogue reconnaissent un pack par son identifiant. Un fic
 
 Pour une mise à jour, remplacez le fichier au même endroit avec le même nom, puis choisissez **Mettre à jour** sur la carte. Le titre de l’onglet HTML sert de nom dans le catalogue. Les fichiers de ce dépôt sont publics.
 
+Pour retirer du catalogue une application publiée automatiquement, supprimez son fichier HTML dans le dossier `applications` sur `main`. Le workflow retire l’entrée correspondante d’`apps-catalog.json`. Après son exécution, cliquez sur **Actualiser** dans le catalogue. Si l’application est déjà installée, utilisez **Supprimer** sur sa carte pour retirer aussi sa copie locale.
+
 ## Publier une nouvelle version du launcher
 
 Augmentez `$baseVersion` dans `MY_APPS.ps1` et envoyez les modifications ensemble sur `main`. Le [workflow de publication Windows](../../actions/workflows/publier-launcher.yml) charge l’interface, construit les deux ZIP et publie la release stable que le launcher détecte au prochain démarrage.

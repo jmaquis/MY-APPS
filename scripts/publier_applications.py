@@ -96,11 +96,11 @@ def build_catalog(catalog, sources, output):
     if len(entries) != len(catalog["apps"]):
         raise ValueError("Le catalogue contient des identifiants en double.")
 
+    html_sources = sorted(source for source in sources if source.suffix.lower() in {".html", ".htm"})
+    source_names = {source.name for source in html_sources}
     packages = []
     seen = set()
-    for source in sorted(sources):
-        if source.suffix.lower() not in {".html", ".htm"}:
-            continue
+    for source in html_sources:
         if source.is_symlink() or not source.is_file() or source.stat().st_size > MAX_HTML_SIZE:
             raise ValueError(f"Le fichier {source.name} doit être un HTML autonome de 90 Mo au maximum.")
         slug = app_id(source)
@@ -108,13 +108,14 @@ def build_catalog(catalog, sources, output):
             raise ValueError(f"Plusieurs fichiers HTML utilisent l’identifiant {slug}.")
         seen.add(slug)
         previous = entries.get(slug)
-        if previous and previous.get("source_file", source.name) != source.name:
-            raise ValueError(f"{source.name} utilise le même identifiant que {previous['source_file']}.")
+        previous_source = previous.get("source_file") if previous else None
+        if previous_source and previous_source != source.name and previous_source in source_names:
+            raise ValueError(f"{source.name} utilise le même identifiant que {previous_source}.")
         html = source.read_bytes()
         if not html.strip():
             raise ValueError(f"Le fichier HTML {source.name} est vide.")
         source_hash = sha256(html)
-        if previous and previous.get("source_sha256") == source_hash:
+        if previous_source == source.name and previous.get("source_sha256") == source_hash:
             continue
 
         version = next_version(previous)
@@ -134,16 +135,21 @@ def build_catalog(catalog, sources, output):
         entries[slug] = entry
         packages.append((path, entry))
 
+    entries = {
+        slug: entry for slug, entry in entries.items()
+        if "source_file" not in entry or entry["source_file"] in source_names
+    }
+    updated_catalog = {**catalog, "apps": list(entries.values())}
     if len(entries) > 250:
         raise ValueError("Le catalogue MY APPS est limité à 250 applications.")
     if not packages:
-        return "", [], catalog
+        return "", [], updated_catalog
 
     package_hashes = "\n".join(entry["sha256"] for _, entry in packages)
     tag = f"catalogue-{sha256(package_hashes.encode())[:24]}"
     for _, entry in packages:
         entry["tag"] = tag
-    return tag, packages, {**catalog, "apps": list(entries.values())}
+    return tag, packages, updated_catalog
 
 
 def gh(*args, input_data=None):
@@ -243,17 +249,28 @@ def publish_catalog(repo, original, catalog):
 
 def main():
     original = CATALOG.read_bytes()
+    previous_catalog = json.loads(original)
+    # Git does not keep the directory after its last tracked file is removed.
+    try:
+        sources = list(APPLICATIONS.iterdir())
+    except FileNotFoundError:
+        sources = []
     with tempfile.TemporaryDirectory(prefix="my-apps-") as temporary:
-        tag, packages, catalog = build_catalog(json.loads(original), APPLICATIONS.iterdir(), Path(temporary))
-        if not packages:
+        tag, packages, catalog = build_catalog(previous_catalog, sources, Path(temporary))
+        if catalog == previous_catalog:
             print("Le catalogue est déjà à jour.")
             return
         repo = os.environ["GITHUB_REPOSITORY"]
-        revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-        publish_release(repo, tag, packages, revision)
+        if packages:
+            revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+            publish_release(repo, tag, packages, revision)
         publish_catalog(repo, original, catalog)
         for _, entry in packages:
             print(f"Publié : {entry['name']} v{entry['version']}")
+        remaining = {entry["id"] for entry in catalog["apps"]}
+        for entry in previous_catalog["apps"]:
+            if entry["id"] not in remaining:
+                print(f"Retiré du catalogue : {entry['name']}")
 
 
 if __name__ == "__main__":
