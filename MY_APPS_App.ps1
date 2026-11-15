@@ -17,7 +17,9 @@ $rollback = Join-Path $root 'Restauration'
 $linksFile = Join-Path $root 'Raccourcis.json'
 $retiredFile = Join-Path $root 'CatalogueRetire.txt'
 $manifestName = 'my-apps.json'
-$githubCatalogUrl = 'https://raw.githubusercontent.com/jmaquis/MY-APPS/main/apps-catalog.json'
+$githubRefsUrl = 'https://github.com/jmaquis/MY-APPS.git/info/refs?service=git-upload-pack'
+$githubTreesUrl = 'https://api.github.com/repos/jmaquis/MY-APPS/git/trees'
+$githubRawUrl = 'https://raw.githubusercontent.com/jmaquis/MY-APPS'
 $githubReleasesUrl = 'https://github.com/jmaquis/MY-APPS/releases/download'
 $githubLauncherReleaseUrl = 'https://api.github.com/repos/jmaquis/MY-APPS/releases/latest'
 $script:launcherRelease = $null
@@ -26,7 +28,9 @@ $script:launcherUpdateInstalled = $false
 $script:githubCatalog = @{}
 $script:retiredAppIds = @{}
 $script:githubCatalogTask = $null
-$script:githubCatalogJson = $null
+$script:githubCatalogRevision = ''
+$script:githubSnapshot = $null
+$script:githubPendingApps = @{}
 $script:githubCatalogState = 'Chargement du catalogue GitHub…'
 $script:githubPackageTask = $null
 $script:githubPackage = $null
@@ -137,7 +141,7 @@ function Get-Apps {
     }
 }
 
-function Install-AppDirectory([string]$work) {
+function Install-AppDirectory([string]$work, $release = $null) {
     $manifest = Read-AppManifest $work
     $isHtml = $manifest.PSObject.Properties['source'] -and $manifest.source -eq 'html'
     $target = Join-Path $packages $manifest.id
@@ -154,6 +158,7 @@ function Install-AppDirectory([string]$work) {
             'Mettre à jour', 'YesNo', 'Question'
         )
         if ($reply -ne 'Yes') { return }
+        if ($null -ne $release) { Assert-GitHubReleaseCurrent $release }
         if ([IO.Directory]::Exists($previous)) { [IO.Directory]::Delete($previous, $true) }
         [IO.Directory]::Move($target, $previous)
     }
@@ -199,7 +204,7 @@ function Import-AppPack([string]$zipPath, $release = $null) {
                 }
             }
         }
-        Install-AppDirectory $work
+        Install-AppDirectory $work $release
     } finally {
         if ([IO.Directory]::Exists($work)) {
             try { [IO.Directory]::Delete($work, $true) } catch { }
@@ -510,23 +515,37 @@ function Receive-LauncherUpdateResult {
     }
 }
 
-function Set-RetiredAppIds($ids) {
-    $previous = ($script:retiredAppIds.Keys | Sort-Object) -join ','
-    [string[]]$lines = @($ids.Keys | Sort-Object)
-    $script:retiredAppIds = $ids
-    if (($lines -join ',') -ceq $previous) { return }
-
-    $temp = "$retiredFile.tmp"
-    try {
-        [IO.File]::WriteAllLines($temp, $lines, [Text.Encoding]::UTF8)
-        if ([IO.File]::Exists($retiredFile)) {
-            [IO.File]::Replace($temp, $retiredFile, [NullString]::Value)
-        } else {
-            [IO.File]::Move($temp, $retiredFile)
+function Remove-RetiredPacks {
+    $failed = $false
+    foreach ($id in $script:retiredAppIds.Keys) {
+        foreach ($parent in @($rollback, $packages)) {
+            $directory = Join-Path $parent $id
+            if (-not [IO.Directory]::Exists($directory)) { continue }
+            try {
+                $manifest = Read-AppManifest $directory
+                if ($manifest.PSObject.Properties['source'] -and $manifest.source -eq 'html') { continue }
+            } catch {
+                # An interrupted installation can leave an incomplete pack.
+            }
+            try {
+                $isReparsePoint = [IO.File]::GetAttributes($directory) -band [IO.FileAttributes]::ReparsePoint
+                [IO.Directory]::Delete($directory, -not $isReparsePoint)
+            } catch [System.IO.IOException] {
+                $failed = $true
+            } catch [System.UnauthorizedAccessException] {
+                $failed = $true
+            }
         }
-    } catch [System.IO.IOException] {
-        # Keep the current list in memory if the cache is temporarily unavailable.
-    } catch [System.UnauthorizedAccessException] { }
+    }
+    if (-not $failed) {
+        try { [IO.File]::Delete($retiredFile) } catch [System.IO.IOException] {
+            $failed = $true
+        } catch [System.UnauthorizedAccessException] {
+            $failed = $true
+        }
+    }
+    if ($failed) { return 'Une copie locale est verrouillée. MY APPS réessaiera automatiquement.' }
+    return ''
 }
 
 function Read-GitHubCatalog([string]$json) {
@@ -553,6 +572,8 @@ function Read-GitHubCatalog([string]$json) {
             Id = $item.id
             Name = $item.name
             Version = $version
+            SourceFile = if ($item.PSObject.Properties['source_file']) { $item.source_file } else { '' }
+            SourceBlob = if ($item.PSObject.Properties['source_blob_sha']) { $item.source_blob_sha } else { '' }
             Sha256 = $item.sha256
             Url = "$githubReleasesUrl/$($item.tag)/$($item.asset)"
         }
@@ -561,7 +582,8 @@ function Read-GitHubCatalog([string]$json) {
     if ($catalog.PSObject.Properties['retired']) {
         if ($catalog.retired -isnot [pscustomobject]) { throw 'La liste des applications retirées est invalide.' }
         foreach ($entry in $catalog.retired.PSObject.Properties) {
-            if ($entry.Name -cnotmatch '^[a-z0-9][a-z0-9-]{0,47}$' -or $entries.ContainsKey($entry.Name)) {
+            if ($entry.Name -cnotmatch '^[a-z0-9][a-z0-9-]{0,47}$' -or
+                $entry.Name -match '^(con|prn|aux|nul|com[0-9]|lpt[0-9])$' -or $entries.ContainsKey($entry.Name)) {
                 throw 'La liste des applications retirées est invalide.'
             }
             $retired[$entry.Name] = $true
@@ -570,18 +592,73 @@ function Read-GitHubCatalog([string]$json) {
     [pscustomobject]@{ Apps = $entries; Retired = $retired }
 }
 
+function Update-GitHubApplications($catalog, [string]$treeJson) {
+    $tree = ConvertFrom-Json -InputObject $treeJson
+    if ($tree.truncated -ne $false -or $tree.tree -isnot [array]) {
+        throw 'La liste des fichiers GitHub est incomplète.'
+    }
+
+    $sources = [Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
+    foreach ($file in $tree.tree) {
+        if ($file.path -notmatch '^applications/([^/]+\.html?)$' -or $file.type -ne 'blob' -or
+            $file.mode -notin '100644', '100755') { continue }
+        $sources.Add($Matches[1], $file.sha)
+    }
+
+    $pending = @{}
+    $retired = $catalog.Retired
+    foreach ($id in @($catalog.Apps.Keys)) {
+        $entry = $catalog.Apps[$id]
+        if (-not $entry.SourceFile) { continue }
+        if (-not $sources.ContainsKey($entry.SourceFile)) {
+            $retired[$id] = $true
+        } elseif (-not $entry.SourceBlob -or $sources[$entry.SourceFile] -ceq $entry.SourceBlob) {
+            [void]$sources.Remove($entry.SourceFile)
+            continue
+        }
+        $catalog.Apps.Remove($id)
+    }
+
+    foreach ($filename in $sources.Keys) {
+        $stem = [IO.Path]::GetFileNameWithoutExtension($filename)
+        $ascii = $stem.Normalize([Text.NormalizationForm]::FormKD) -creplace '[^\x00-\x7F]', ''
+        $id = ($ascii.ToLowerInvariant() -creplace '[^a-z0-9]+', '-').Trim('-')
+        if ($id.Length -gt 48) {
+            $hash = [Security.Cryptography.SHA256]::Create()
+            try {
+                $digest = $hash.ComputeHash([Text.Encoding]::ASCII.GetBytes($id))
+                $id = $id.Substring(0, 37).TrimEnd('-') + '-' +
+                    [BitConverter]::ToString($digest, 0, 5).Replace('-', '').ToLowerInvariant()
+            } finally { $hash.Dispose() }
+        }
+        if (-not $id -or $id -match '^(con|prn|aux|nul|com[0-9]|lpt[0-9])$') { continue }
+        $retired.Remove($id)
+        if (-not $catalog.Apps.ContainsKey($id)) { $pending[$id] = ($stem -replace '[_-]', ' ').Trim() }
+    }
+
+    $script:githubCatalog = $catalog.Apps
+    $script:githubPendingApps = $pending
+    $script:retiredAppIds = $retired
+}
+
 function Start-GitHubCatalogCheck([switch]$automatic) {
-    if ($null -ne $script:githubCatalogTask) { return }
-    if (-not $automatic) { $script:githubCatalogState = 'Chargement du catalogue GitHub…' }
+    if ($null -ne $script:githubCatalogTask -or $null -ne $script:githubSnapshot) { return }
+    if (-not $automatic) { $script:githubCatalogState = 'Actualisation depuis GitHub…' }
     $ui.RefreshCatalogButton.IsEnabled = $false
     try {
-        $url = "${githubCatalogUrl}?refresh=$([DateTime]::UtcNow.Ticks)"
-        $script:githubCatalogTask = $githubHttp.GetStringAsync($url)
+        $script:githubCatalogTask = $githubHttp.GetStringAsync($githubRefsUrl)
     } catch {
-        $script:githubCatalogState = 'Catalogue GitHub indisponible. Réessaie dans un instant.'
+        $script:githubCatalogState = 'Synchronisation GitHub indisponible. Réessaie dans un instant.'
         $ui.RefreshCatalogButton.IsEnabled = $true
     }
     if (-not $automatic -or $null -eq $script:githubCatalogTask) { Render-Apps }
+}
+
+function Assert-GitHubReleaseCurrent($release) {
+    $published = $script:githubCatalog[$release.Id]
+    if ($null -eq $published -or $published.Url -cne $release.Url -or $published.Sha256 -cne $release.Sha256) {
+        throw 'Le pack a changé sur GitHub. Actualise le catalogue avant de réessayer.'
+    }
 }
 
 function Start-GitHubAppDownload($app) {
@@ -590,29 +667,45 @@ function Start-GitHubAppDownload($app) {
         $status.Text = 'Un téléchargement est déjà en cours.'
         return
     }
+    Assert-GitHubReleaseCurrent $release
     $script:githubPackageTask = $githubHttp.GetByteArrayAsync($release.Url)
     $script:githubPackage = @{ Release = $release; IsUpdate = -not $app.IsCatalogOnly }
     $status.Text = "Téléchargement de $($release.Name)…"
 }
 
 function Receive-GitHubResults {
-    if ($null -ne $script:githubCatalogTask -and $script:githubCatalogTask.IsCompleted) {
-        $task = $script:githubCatalogTask
-        $script:githubCatalogTask = $null
+    $snapshot = $script:githubSnapshot
+    $refReady = $null -ne $script:githubCatalogTask -and $script:githubCatalogTask.IsCompleted
+    $snapshotReady = $null -ne $snapshot -and $snapshot.Catalog.IsCompleted -and $snapshot.Tree.IsCompleted
+    if ($refReady -or $snapshotReady) {
         $previousState = $script:githubCatalogState
         $changed = $false
         try {
-            $json = $task.GetAwaiter().GetResult()
-            if ($json -cne $script:githubCatalogJson) {
-                $catalog = Read-GitHubCatalog $json
-                $script:githubCatalog = $catalog.Apps
-                Set-RetiredAppIds $catalog.Retired
-                $script:githubCatalogJson = $json
+            if ($refReady) {
+                $task = $script:githubCatalogTask
+                $script:githubCatalogTask = $null
+                # protocol v0 advertises the branch tip without using the REST API quota.
+                $refs = $task.GetAwaiter().GetResult()
+                $revision = [regex]::Match($refs, '(?m)[0-9a-f]{40}(?= refs/heads/main\r?$)').Value
+                if (-not $revision) { throw 'La branche main est introuvable sur GitHub.' }
+                if ($revision -cne $script:githubCatalogRevision) {
+                    $script:githubSnapshot = @{
+                        Revision = $revision
+                        Catalog = $githubHttp.GetStringAsync("$githubRawUrl/$revision/apps-catalog.json")
+                        Tree = $githubHttp.GetStringAsync("$githubTreesUrl/${revision}?recursive=1")
+                    }
+                    return
+                }
+            } else {
+                $script:githubSnapshot = $null
+                $catalog = Read-GitHubCatalog ($snapshot.Catalog.GetAwaiter().GetResult())
+                Update-GitHubApplications $catalog ($snapshot.Tree.GetAwaiter().GetResult())
+                $script:githubCatalogRevision = $snapshot.Revision
                 $changed = $true
             }
-            $script:githubCatalogState = ''
+            $script:githubCatalogState = Remove-RetiredPacks
         } catch {
-            $script:githubCatalogState = 'Catalogue GitHub indisponible. Réessaie dans un instant.'
+            $script:githubCatalogState = 'Synchronisation GitHub indisponible. Réessaie dans un instant.'
         }
         $ui.RefreshCatalogButton.IsEnabled = $true
         if ($changed) { $script:appModels = @(Get-CardModels) }
@@ -633,9 +726,7 @@ function Receive-GitHubResults {
         } catch {
             throw "Téléchargement de $($release.Name) impossible. Réessaie dans un instant."
         }
-        if ($script:retiredAppIds.ContainsKey($release.Id)) {
-            throw 'Cette application a été retirée du catalogue GitHub.'
-        }
+        Assert-GitHubReleaseCurrent $release
         if ($request.IsUpdate -and -not [IO.Directory]::Exists((Join-Path $packages $release.Id))) {
             throw "L’application a été retirée pendant le téléchargement."
         }
@@ -675,8 +766,21 @@ function Get-CardModels {
         }
     }
 
+    foreach ($id in $script:githubPendingApps.Keys) {
+        if (-not $installedIds.ContainsKey($id)) {
+            $apps += [pscustomobject]@{
+                Id = $id
+                Name = $script:githubPendingApps[$id]
+                Version = ''
+                Kind = 'Catalogue GitHub'
+                Path = ''
+            }
+        }
+    }
+
     foreach ($app in $apps | Sort-Object Name) {
         $isCatalogOnly = $app.Kind -eq 'Catalogue GitHub'
+        $isGitHub = $app.Id -and ($script:githubCatalog.ContainsKey($app.Id) -or $script:githubPendingApps.ContainsKey($app.Id))
         $release = $null
         if ($app.Id -and $script:githubCatalog.ContainsKey($app.Id)) {
             $candidate = $script:githubCatalog[$app.Id]
@@ -689,6 +793,8 @@ function Get-CardModels {
         $isLink = $app.Kind -eq 'Raccourci'
         $detail = if ($isLink) {
             [IO.Path]::GetFileName($app.Path)
+        } elseif ($app.Id -and $script:githubPendingApps.ContainsKey($app.Id)) {
+            'Pack en cours de publication sur GitHub'
         } elseif ($isCatalogOnly) {
             "Nouvelle application · version $($app.Version)"
         } elseif ($null -ne $release) {
@@ -707,6 +813,7 @@ function Get-CardModels {
             Detail = $detail
             IsLink = $isLink
             IsCatalogOnly = $isCatalogOnly
+            IsGitHub = $isGitHub
             Release = $release
             InstalledActions = if ($isCatalogOnly) { 'Collapsed' } else { 'Visible' }
             GitHubActionVisibility = if ($null -eq $release) { 'Collapsed' } else { 'Visible' }
@@ -743,9 +850,9 @@ function Render-Apps {
     )
     $ui.GitHubAlertButton.Content = $alerts -join ' · '
     $ui.GitHubAlertButton.Visibility = if (-not $githubOnly -and $alerts.Count -gt 0) { 'Visible' } else { 'Collapsed' }
-    $ui.RefreshCatalogButton.Visibility = if ($githubOnly) { 'Visible' } else { 'Collapsed' }
+    $ui.RefreshCatalogButton.Visibility = if (-not $linksOnly -and -not $packsOnly) { 'Visible' } else { 'Collapsed' }
     $ui.GitHubStatus.Text = $script:githubCatalogState
-    $ui.GitHubStatus.Visibility = if ($githubOnly -and $script:githubCatalogState) { 'Visible' } else { 'Collapsed' }
+    $ui.GitHubStatus.Visibility = if (-not $linksOnly -and -not $packsOnly -and $script:githubCatalogState) { 'Visible' } else { 'Collapsed' }
 
     $ui.PageTitle.Text = if ($linksOnly) { 'Raccourcis' }
         elseif ($packsOnly) { 'Applications locales' }
@@ -754,7 +861,7 @@ function Render-Apps {
 
     $visibleApps = @(
         foreach ($app in $script:appModels) {
-            if (($githubOnly -and $null -eq $app.Release) -or ($linksOnly -and -not $app.IsLink) -or
+            if (($githubOnly -and -not $app.IsGitHub) -or ($linksOnly -and -not $app.IsLink) -or
                 ($packsOnly -and ($app.IsLink -or $app.IsCatalogOnly))) { continue }
             if ($query -and $compareInfo.IndexOf($app.Name, $query, $compareOptions) -lt 0) { continue }
             $app
@@ -772,11 +879,11 @@ function Render-Apps {
         $ui.EmptyTitle.Text = 'Aucun résultat'
         $ui.EmptyBody.Text = "Essaie un autre nom d’application."
     } elseif ($githubOnly) {
-        $ui.EmptyTitle.Text = if ($script:githubCatalogState) { 'Catalogue GitHub' } else { 'Tout est à jour' }
+        $ui.EmptyTitle.Text = if ($script:githubCatalogState) { 'Catalogue GitHub' } else { 'Aucune application sur GitHub' }
         $ui.EmptyBody.Text = if ($script:githubCatalogState) {
             'Tes applications installées sont disponibles dans la bibliothèque.'
         } else {
-            'Les nouvelles applications et les mises à jour apparaîtront ici.'
+            'Ajoute un fichier HTML au dossier applications sur GitHub, puis clique sur Actualiser.'
         }
     } elseif ($linksOnly) {
         $ui.EmptyTitle.Text = 'Aucun raccourci'
@@ -940,7 +1047,10 @@ try {
     $catalogTimer = [Windows.Threading.DispatcherTimer]::new()
     $catalogTimer.Interval = [TimeSpan]::FromSeconds(15)
     $catalogTimer.Add_Tick({ Start-GitHubCatalogCheck -Automatic })
-    $ui.RefreshCatalogButton.Add_Click({ Start-GitHubCatalogCheck })
+    $ui.RefreshCatalogButton.Add_Click({
+        $ui.SearchBox.Clear()
+        Start-GitHubCatalogCheck
+    })
     $ui.GitHubAlertButton.Add_Click({
         $ui.SearchBox.Clear()
         $ui.GitHubNav.IsChecked = $true

@@ -117,7 +117,10 @@ def build_catalog(catalog, sources, output):
         if not html.strip():
             raise ValueError(f"Le fichier HTML {source.name} est vide.")
         source_hash = sha256(html)
+        blob_header = b"blob " + str(len(html)).encode("ascii") + b"\0"
+        source_blob = hashlib.sha1(blob_header + html).hexdigest()
         if previous_source == source.name and previous.get("source_sha256") == source_hash:
+            entries[slug] = {**previous, "source_blob_sha": source_blob}
             continue
 
         version = next_version(previous or ({"version": retired_version} if retired_version else None))
@@ -133,6 +136,7 @@ def build_catalog(catalog, sources, output):
             "sha256": sha256(path.read_bytes()),
             "source_file": source.name,
             "source_sha256": source_hash,
+            "source_blob_sha": source_blob,
         }
         entries[slug] = entry
         packages.append((path, entry))

@@ -12,7 +12,7 @@ Les applications installées et les raccourcis sont stockés dans le profil Wind
 
 ## Installer et mettre à jour une application
 
-À l’ouverture, MY APPS consulte le catalogue GitHub. Une alerte signale les nouvelles applications et les mises à jour. Sur l’accueil **Mes applications**, cliquez sur **Installer l’application** sur la carte voulue. Après le téléchargement et l’installation, cliquez sur **Ouvrir**. Les mises à jour se font via **Mettre à jour** sur la carte. La rubrique **Catalogue GitHub** permet aussi de voir les nouveautés et les mises à jour. Les applications installées restent utilisables hors ligne.
+À l’ouverture, MY APPS consulte le catalogue GitHub. Une alerte signale les nouvelles applications et les mises à jour. Sur l’accueil **Mes applications**, cliquez sur **Installer l’application** sur la carte voulue. Après le téléchargement et l’installation, cliquez sur **Ouvrir**. Les mises à jour se font via **Mettre à jour** sur la carte. La rubrique **Catalogue GitHub** affiche les applications publiées. Le bouton **Actualiser**, disponible aussi sur l’accueil, relit le dossier `applications` sur GitHub. Les applications installées restent utilisables hors ligne.
 
 Les mises à jour du catalogue reconnaissent un pack par son identifiant. Un fichier importé directement comme **HTML local** garde son propre mécanisme de remplacement.
 
@@ -24,7 +24,7 @@ Les mises à jour du catalogue reconnaissent un pack par son identifiant. Un fic
 
 Pour une mise à jour, remplacez le fichier au même endroit avec le même nom, puis choisissez **Mettre à jour** sur la carte. Le titre de l’onglet HTML sert de nom dans le catalogue. Les fichiers de ce dépôt sont publics.
 
-Pour retirer du catalogue une application publiée automatiquement, supprimez son fichier HTML dans le dossier `applications` sur `main`. Le workflow retire l’entrée correspondante d’`apps-catalog.json`. Depuis MY APPS 1.5.1, le launcher vérifie le catalogue toutes les 15 secondes et masque la carte après la publication de la suppression. Il conserve les fichiers installés et leurs données sur le PC.
+Pour retirer du catalogue une application publiée automatiquement, supprimez son fichier HTML dans le dossier `applications` sur `main`. Le workflow retire l’entrée correspondante d’`apps-catalog.json`. Depuis MY APPS 1.5.2, le launcher vérifie la branche `main` toutes les 15 secondes et retire la carte ainsi que les fichiers du pack installé par MY APPS. Les données enregistrées par le navigateur sont conservées. Quand vous ajoutez ou remettez un fichier HTML sur `main`, **Actualiser** affiche sa carte dès que GitHub confirme le commit. Le bouton **Installer l’application** apparaît dès que GitHub a publié le ZIP.
 
 ## Publier une nouvelle version du launcher
 
