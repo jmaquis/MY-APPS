@@ -11,6 +11,8 @@ import tempfile
 import unicodedata
 from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 CATALOG = Path("apps-catalog.json")
@@ -156,38 +158,76 @@ def gh(*args, input_data=None):
 
 def release_info(repo, tag):
     result = gh(
-        "api", "--paginate", f"repos/{repo}/releases",
+        "api", "--paginate", "-H", "Cache-Control: no-cache", f"repos/{repo}/releases",
         "--jq", f'.[] | select(.tag_name == "{tag}") | {{id, draft}}',
     )
-    return next((json.loads(line) for line in result.stdout.splitlines()), None)
+    return next((json.loads(line) for line in result.stdout.splitlines() if line), None)
+
+
+def api_json(method, endpoint, data):
+    result = gh("api", "--method", method, endpoint, "--input", "-", input_data=json.dumps(data))
+    return json.loads(result.stdout)
+
+
+def upload_pack(repo, release_id, path):
+    address = f"https://uploads.github.com/repos/{repo}/releases/{release_id}/assets"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+        "Content-Length": str(path.stat().st_size),
+        "Content-Type": "application/zip",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    with path.open("rb") as payload:
+        request = Request(f"{address}?{urlencode({'name': path.name})}", data=payload, headers=headers, method="POST")
+        with urlopen(request, timeout=60) as response:
+            return json.load(response)
+
+
+def matches_pack(asset, entry):
+    return bool(asset and asset["state"] == "uploaded" and asset.get("digest") == f"sha256:{entry['sha256']}")
 
 
 def publish_release(repo, tag, packages, revision):
+    releases_path = f"repos/{repo}/releases"
     release = release_info(repo, tag)
     if release is None:
-        gh(
-            "release", "create", tag, "--repo", repo, "--target", revision,
-            "--draft", "--prerelease", "--latest=false",
-            "--title", "Applications MY APPS",
-            "--notes", "Packs publiés dans le catalogue du launcher MY APPS.",
+        release = api_json("POST", releases_path, {
+            "tag_name": tag,
+            "target_commitish": revision,
+            "draft": True,
+            "prerelease": True,
+            "make_latest": "false",
+            "name": "Applications MY APPS",
+            "body": "Packs publiés dans le catalogue du launcher MY APPS.",
+        })
+        uploaded = {}
+    else:
+        result = gh(
+            "api", "--paginate", "-H", "Cache-Control: no-cache", f"{releases_path}/{release['id']}/assets",
+            "--jq", ".[] | {id, name, digest, state}",
         )
-        release = release_info(repo, tag)
-        if release is None:
-            raise RuntimeError("GitHub ne renvoie pas la release créée.")
+        uploaded = {asset["name"]: asset for asset in map(json.loads, filter(None, result.stdout.splitlines()))}
 
-    if release["draft"]:
-        gh("release", "upload", tag, *(str(path) for path, _ in packages), "--repo", repo, "--clobber")
-
-    release_path = f"repos/{repo}/releases/{release['id']}"
-    result = gh("api", "--paginate", f"{release_path}/assets", "--jq", ".[] | {name, digest, state}")
-    uploaded = {asset["name"]: asset for asset in map(json.loads, result.stdout.splitlines())}
     for path, entry in packages:
         asset = uploaded.get(path.name)
-        if not asset or asset["state"] != "uploaded" or asset["digest"] != f"sha256:{entry['sha256']}":
+        if matches_pack(asset, entry):
+            continue
+        if release["draft"]:
+            if asset:
+                gh("api", "--method", "DELETE", f"{releases_path}/assets/{asset['id']}")
+            asset = upload_pack(repo, release["id"], path)
+        if not matches_pack(asset, entry):
             raise RuntimeError(f"L’empreinte de {path.name} diffère sur GitHub.")
 
     if release["draft"]:
-        gh("release", "edit", tag, "--repo", repo, "--draft=false", "--prerelease", "--latest=false")
+        published = api_json("PATCH", f"{releases_path}/{release['id']}", {
+            "draft": False,
+            "prerelease": True,
+            "make_latest": "false",
+        })
+        if published["draft"]:
+            raise RuntimeError("La release GitHub est encore en brouillon.")
 
 
 def publish_catalog(repo, original, catalog):
