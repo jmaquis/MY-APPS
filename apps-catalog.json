@@ -13,17 +13,6 @@
       "source_blob_sha": "abcee8d40f8e3239885230b6646f05bdd27d1135"
     },
     {
-      "id": "carnet-de-sante-2",
-      "name": "Carnet de santé",
-      "version": "1.0.1",
-      "asset": "carnet-de-sante-2-1.0.1.zip",
-      "sha256": "ea95e877012d16c54f02d5a1b14cc2145ed7bee255a4575df4d8b87450735153",
-      "source_file": "Carnet_de_sante (2).html",
-      "source_sha256": "b29dda1b3605db2e56dce1ba84fe4b46dfc9da2241ec406ee3bfb6b0ca0ad05d",
-      "source_blob_sha": "600b72a8284b10b3e0306dd0db2d685ac207c047",
-      "tag": "catalogue-9704d0778b902a23cda29d9a"
-    },
-    {
       "id": "carnet-auto-1",
       "name": "Octane — Mon carnet auto",
       "version": "1.0.0",
@@ -35,5 +24,7 @@
       "tag": "catalogue-c7fa89b02241629403103bd6"
     }
   ],
-  "retired": {}
+  "retired": {
+    "carnet-de-sante-2": "1.0.1"
+  }
 }
