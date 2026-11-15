@@ -1,4 +1,4 @@
-﻿MY APPS • Windows • version 1.4.0
+﻿MY APPS • Windows • version 1.4.1
 
 SI VOUS UTILISEZ DÉJÀ MY APPS
 Fermez MY APPS et décompressez cette archive dans le dossier qui contient
@@ -7,7 +7,7 @@ puis relancez MY_APPS.cmd. Vos applications locales et vos raccourcis
 sont retrouvés depuis le même compte Windows.
 
 PREMIER LANCEMENT
-1. Décompressez MY_APPS_Windows_v1.4.0.zip dans un dossier de votre choix.
+1. Décompressez MY_APPS_Windows_v1.4.1.zip dans un dossier de votre choix.
 2. Ouvrez ce dossier et double-cliquez sur MY_APPS.cmd.
 3. Cliquez sur « Importer un pack ZIP… » et sélectionnez Demo_Mes_Notes.zip.
    Le pack de démonstration doit rester au format ZIP.
@@ -49,13 +49,16 @@ Sélectionnez un ZIP de mise à jour fourni par une source de confiance.
 Pour préparer un ZIP de mise à jour du launcher, placez à sa racine
 MY_APPS_App.ps1, MY_APPS.xaml et my-apps-update.json pour la nouvelle version.
 Le fichier JSON indique le produit et la version, par exemple :
-{"schema":1,"product":"MY_APPS_LAUNCHER","version":"1.4.1"}
+{"schema":1,"product":"MY_APPS_LAUNCHER","version":"1.4.2"}
 Le script reçoit AppVersion et VersionsPath en paramètres au démarrage.
 
 CATALOGUE GITHUB
-Le catalogue de jmaquis/MY-APPS est vérifié à l’ouverture. L’alerte
-« Nouvelle application » ou « Mise à jour disponible » ouvre le catalogue.
-Cliquez sur « Installer » ou « Mettre à jour » sur la carte voulue.
+Le catalogue de jmaquis/MY-APPS est vérifié à l’ouverture. Les applications
+disponibles s’affichent sur l’accueil « Mes applications ». Cliquez sur
+« Installer l’application » pour télécharger et installer le pack GitHub.
+Après l’installation, le bouton « Ouvrir » permet de lancer l’application.
+L’alerte ouvre le catalogue, où les nouveautés et mises à jour sont listées.
+Les applications déjà installées peuvent proposer le bouton « Mettre à jour ».
 Utilisez « Actualiser » dans le catalogue pour interroger GitHub à nouveau.
 Gardez le même navigateur et profil pour retrouver les données de vos applis.
 

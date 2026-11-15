@@ -11,7 +11,7 @@ Les applications installées et les raccourcis sont stockés dans le profil Wind
 
 ## Installer et mettre à jour une application
 
-À l’ouverture, MY APPS consulte le catalogue GitHub. Une alerte signale les nouvelles applications et les mises à jour. Ouvrez **Catalogue GitHub**, puis sélectionnez **Installer** ou **Mettre à jour** sur la carte. Les applications installées restent utilisables hors ligne.
+À l’ouverture, MY APPS consulte le catalogue GitHub. Une alerte signale les nouvelles applications et les mises à jour. Sur l’accueil **Mes applications**, cliquez sur **Installer l’application** sur la carte voulue. Après le téléchargement et l’installation, cliquez sur **Ouvrir**. Les mises à jour se font via **Mettre à jour** sur la carte. La rubrique **Catalogue GitHub** permet aussi de voir les nouveautés et les mises à jour. Les applications installées restent utilisables hors ligne.
 
 Les mises à jour du catalogue reconnaissent un pack par son identifiant. Un fichier importé directement comme **HTML local** garde son propre mécanisme de remplacement.
 
@@ -19,7 +19,7 @@ Les mises à jour du catalogue reconnaissent un pack par son identifiant. Un fic
 
 1. Ouvrez le dossier [applications](applications/) dans ce dépôt.
 2. Cliquez sur **Add file → Upload files**, déposez le fichier HTML autonome et enregistrez-le sur `main` avec **Commit changes**.
-3. Attendez la fin de la [publication automatique](../../actions/workflows/publier-applications.yml), puis cliquez sur **Actualiser** dans le **Catalogue GitHub** de MY APPS. La carte proposera **Installer**.
+3. Attendez la fin de la [publication automatique](../../actions/workflows/publier-applications.yml), puis cliquez sur **Actualiser** dans le **Catalogue GitHub** de MY APPS. La carte proposera **Installer l’application**, également sur l’accueil.
 
 Pour une mise à jour, remplacez le fichier au même endroit avec le même nom, puis choisissez **Mettre à jour** sur la carte. Le titre de l’onglet HTML sert de nom dans le catalogue. Les fichiers de ce dépôt sont publics.
 

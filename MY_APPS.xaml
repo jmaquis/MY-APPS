@@ -141,11 +141,17 @@
                     Margin="7,0,0,0"
                     AutomationProperties.Name="{Binding [RemoveAccessibleName]}" />
           </StackPanel>
-          <Button Grid.Row="3" Tag="DownloadApp" Content="{Binding [GitHubActionLabel]}"
+          <Button x:Name="GitHubActionButton" Grid.Row="3" Tag="DownloadApp" Content="{Binding [GitHubActionLabel]}"
                   Style="{StaticResource Action}" HorizontalAlignment="Left" Margin="0,7,0,0"
                   Visibility="{Binding [GitHubActionVisibility]}" AutomationProperties.Name="{Binding [GitHubActionName]}" />
         </Grid>
       </Border>
+      <DataTemplate.Triggers>
+        <DataTrigger Binding="{Binding [IsCatalogOnly]}" Value="True">
+          <Setter TargetName="GitHubActionButton" Property="Style" Value="{StaticResource Primary}" />
+          <Setter TargetName="GitHubActionButton" Property="Margin" Value="0" />
+        </DataTrigger>
+      </DataTemplate.Triggers>
     </DataTemplate>
   </Window.Resources>
   <Grid x:Name="WindowLayout">

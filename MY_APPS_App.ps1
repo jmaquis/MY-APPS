@@ -540,7 +540,7 @@ function Get-CardModels {
             Release = $release
             InstalledActions = if ($isCatalogOnly) { 'Collapsed' } else { 'Visible' }
             GitHubActionVisibility = if ($null -eq $release) { 'Collapsed' } else { 'Visible' }
-            GitHubActionLabel = if ($isCatalogOnly) { 'Installer' } else { 'Mettre à jour' }
+            GitHubActionLabel = if ($isCatalogOnly) { "Installer l’application" } else { 'Mettre à jour' }
             GitHubActionName = if ($isCatalogOnly) { "Installer $($app.Name)" } else { "Mettre à jour $($app.Name)" }
             IconBackground = if ($isLink) { '#1E3A3D' } else { '#362C55' }
             IconStroke = if ($isLink) { '#A9E3C8' } else { '#D1C3FF' }
@@ -584,8 +584,8 @@ function Render-Apps {
 
     $visibleApps = @(
         foreach ($app in $script:appModels) {
-            if (($githubOnly -and $null -eq $app.Release) -or (-not $githubOnly -and $app.IsCatalogOnly) -or
-                ($linksOnly -and -not $app.IsLink) -or ($packsOnly -and $app.IsLink)) { continue }
+            if (($githubOnly -and $null -eq $app.Release) -or ($linksOnly -and -not $app.IsLink) -or
+                ($packsOnly -and ($app.IsLink -or $app.IsCatalogOnly))) { continue }
             if ($query -and $compareInfo.IndexOf($app.Name, $query, $compareOptions) -lt 0) { continue }
             $app
         }
