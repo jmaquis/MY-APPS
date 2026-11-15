@@ -18,6 +18,7 @@ $linksFile = Join-Path $root 'Raccourcis.json'
 $retiredFile = Join-Path $root 'CatalogueRetire.txt'
 $manifestName = 'my-apps.json'
 $githubRefsUrl = 'https://github.com/jmaquis/MY-APPS.git/info/refs?service=git-upload-pack'
+$githubBranchRefUrl = 'https://api.github.com/repos/jmaquis/MY-APPS/git/ref/heads/main'
 $githubTreesUrl = 'https://api.github.com/repos/jmaquis/MY-APPS/git/trees'
 $githubRawUrl = 'https://raw.githubusercontent.com/jmaquis/MY-APPS'
 $githubReleasesUrl = 'https://github.com/jmaquis/MY-APPS/releases/download'
@@ -29,6 +30,8 @@ $script:githubCatalog = @{}
 $script:retiredAppIds = @{}
 $script:githubCatalogTask = $null
 $script:githubManualRefresh = $false
+$script:githubCatalogUsesApi = $false
+$script:githubNextAutomaticApiCheck = [datetime]::MinValue
 $script:githubCatalogRevision = ''
 $script:githubSnapshot = $null
 $script:githubPendingApps = @{}
@@ -642,7 +645,24 @@ function Update-GitHubApplications($catalog, [string]$treeJson) {
     $script:retiredAppIds = $retired
 }
 
+function Read-GitHubCatalogRevision([string]$response, [bool]$usesApi) {
+    if ($usesApi) {
+        $reference = ConvertFrom-Json -InputObject $response
+        if ($reference.ref -ceq 'refs/heads/main' -and $reference.object.type -ceq 'commit' -and
+            $reference.object.sha -cmatch '^[0-9a-f]{40}$') {
+            return $reference.object.sha
+        }
+    } else {
+        # The Git advertisement identifies the branch without using REST API quota.
+        $revision = [regex]::Match($response, '(?m)[0-9a-f]{40}(?= refs/heads/main\r?$)').Value
+        if ($revision) { return $revision }
+    }
+    throw 'La réponse GitHub ne contient pas la branche main.'
+}
+
 function Start-GitHubCatalogCheck([switch]$automatic) {
+    if ($automatic -and $script:githubCatalogUsesApi -and
+        [datetime]::UtcNow -lt $script:githubNextAutomaticApiCheck) { return }
     $busy = $null -ne $script:githubCatalogTask -or $null -ne $script:githubSnapshot
     if ($busy -and ($automatic -or $script:githubManualRefresh)) { return }
 
@@ -658,10 +678,12 @@ function Start-GitHubCatalogCheck([switch]$automatic) {
             $script:githubCatalogTask = $null
             $script:githubSnapshot = $null
         }
+        $script:githubCatalogUsesApi = $false
         $script:githubCatalogTask = $catalogHttp.GetStringAsync($githubRefsUrl)
     } catch {
         $script:githubManualRefresh = $false
-        $script:githubCatalogState = 'Synchronisation GitHub indisponible. Clique sur Actualiser pour réessayer.'
+        $detail = $_.Exception.GetBaseException().Message
+        $script:githubCatalogState = "Connexion à GitHub impossible. $detail"
         Render-Apps
     }
 }
@@ -692,14 +714,24 @@ function Receive-GitHubResults {
     if ($refReady -or $snapshotReady) {
         $previousState = $script:githubCatalogState
         $changed = $false
+        $stage = 'branche main'
         try {
             if ($refReady) {
                 $task = $script:githubCatalogTask
                 $script:githubCatalogTask = $null
-                # protocol v0 advertises the branch tip without using the REST API quota.
-                $refs = $task.GetAwaiter().GetResult()
-                $revision = [regex]::Match($refs, '(?m)[0-9a-f]{40}(?= refs/heads/main\r?$)').Value
-                if (-not $revision) { throw 'La branche main est introuvable sur GitHub.' }
+                try {
+                    $revision = Read-GitHubCatalogRevision ($task.GetAwaiter().GetResult()) $script:githubCatalogUsesApi
+                } catch {
+                    if ($script:githubCatalogUsesApi -or
+                        (-not $script:githubManualRefresh -and [datetime]::UtcNow -lt $script:githubNextAutomaticApiCheck)) {
+                        throw
+                    }
+                    # Limit automatic fallback requests to stay within GitHub's anonymous quota.
+                    $script:githubNextAutomaticApiCheck = [datetime]::UtcNow.AddSeconds(90)
+                    $script:githubCatalogUsesApi = $true
+                    $script:githubCatalogTask = $catalogHttp.GetStringAsync($githubBranchRefUrl)
+                    return
+                }
                 if ($revision -cne $script:githubCatalogRevision) {
                     $script:githubSnapshot = @{
                         Revision = $revision
@@ -710,17 +742,24 @@ function Receive-GitHubResults {
                 }
             } else {
                 $script:githubSnapshot = $null
+                $stage = 'catalogue des applications'
                 $catalog = Read-GitHubCatalog ($snapshot.Catalog.GetAwaiter().GetResult())
+                $stage = 'dossier applications'
                 Update-GitHubApplications $catalog ($snapshot.Tree.GetAwaiter().GetResult())
                 $script:githubCatalogRevision = $snapshot.Revision
                 $changed = $true
             }
+            $stage = 'mise à jour des copies locales'
             $script:githubCatalogState = Remove-RetiredPacks
             if ($script:githubManualRefresh -and -not $script:githubCatalogState) {
                 $script:githubCatalogState = 'Catalogue GitHub à jour.'
             }
         } catch {
-            $script:githubCatalogState = 'Synchronisation GitHub indisponible. Clique sur Actualiser pour réessayer.'
+            $detail = $_.Exception.GetBaseException().Message
+            $script:githubCatalogState = "Synchronisation GitHub impossible ($stage). $detail"
+            if (-not $script:githubManualRefresh -and -not $changed -and $script:githubCatalogRevision) {
+                $script:githubCatalogState = "$($script:githubCatalogState) Le dernier catalogue chargé reste affiché."
+            }
         }
         $script:githubManualRefresh = $false
         if ($changed) { $script:appModels = @(Get-CardModels) }
@@ -1056,7 +1095,7 @@ try {
         $client.MaxResponseContentBufferSize = 100MB
     }
     $githubHttp.Timeout = [TimeSpan]::FromSeconds(40)
-    $catalogHttp.Timeout = [TimeSpan]::FromSeconds(12)
+    $catalogHttp.Timeout = [TimeSpan]::FromSeconds(20)
     $githubTimer = [Windows.Threading.DispatcherTimer]::new()
     $githubTimer.Interval = [TimeSpan]::FromMilliseconds(300)
     $githubTimer.Add_Tick({
