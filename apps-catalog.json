@@ -1,4 +1,13 @@
 {
   "schema": 1,
-  "apps": []
+  "apps": [
+    {
+      "id": "mes-notes-demo",
+      "name": "Mes notes",
+      "version": "1.0.1",
+      "tag": "v1.4.0",
+      "asset": "Mes_Notes_v1.0.1.zip",
+      "sha256": "6a05345f6f666319359a4e7ba665573b679308785c49a09d815c43d777766a51"
+    }
+  ]
 }
