@@ -12,10 +12,6 @@
       "source_blob_sha": "f548a4c0cbce84fa1e8fb91cb701d3c62cc34928",
       "tag": "catalogue-56ef5b8d5d5d3347850f8941"
     }
-  ],
-  "retired": {
-    "carnet-de-sante-2": "1.0.1",
-    "carnet-auto": "1.0.0",
-    "carnet-auto-1": "1.0.0"
+  ]
   }
 }
