@@ -15,7 +15,15 @@ Les applications installées et les raccourcis sont stockés dans le profil Wind
 
 Les mises à jour du catalogue reconnaissent un pack par son identifiant. Un fichier importé directement comme **HTML local** garde son propre mécanisme de remplacement.
 
-## Publier une application dans le catalogue
+## Déposer un fichier HTML sur GitHub
+
+1. Ouvrez le dossier [applications](applications/) dans ce dépôt.
+2. Cliquez sur **Add file → Upload files**, déposez le fichier HTML autonome et enregistrez-le sur `main` avec **Commit changes**.
+3. Attendez la fin de la [publication automatique](../../actions/workflows/publier-applications.yml), puis cliquez sur **Actualiser** dans le **Catalogue GitHub** de MY APPS. La carte proposera **Installer**.
+
+Pour une mise à jour, remplacez le fichier au même endroit avec le même nom, puis choisissez **Mettre à jour** sur la carte. Le titre de l’onglet HTML sert de nom dans le catalogue. Les fichiers de ce dépôt sont publics.
+
+## Publier manuellement un pack ZIP
 
 1. Préparez un pack ZIP MY APPS contenant `index.html` et `my-apps.json`. Conservez l’`id` d’une version à l’autre et augmentez la version au format `x.y.z`.
 2. Ajoutez le pack ZIP aux fichiers d’une [release GitHub](../../releases). Utilisez un nom de fichier sans espaces, par exemple `Mon_Appli_v1.0.1.zip`.

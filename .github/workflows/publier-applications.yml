@@ -1,0 +1,34 @@
+name: Publier les applications HTML
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'applications/**'
+      - '.github/workflows/publier-applications.yml'
+      - 'scripts/publier_applications.py'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: catalogue-my-apps-main
+  cancel-in-progress: false
+
+jobs:
+  publier:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Récupérer la dernière version de main
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Publier les packs et actualiser le catalogue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/publier_applications.py
