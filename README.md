@@ -24,7 +24,7 @@ Les mises à jour du catalogue reconnaissent un pack par son identifiant. Un fic
 
 Pour une mise à jour, remplacez le fichier au même endroit avec le même nom, puis choisissez **Mettre à jour** sur la carte. Le titre de l’onglet HTML sert de nom dans le catalogue. Les fichiers de ce dépôt sont publics.
 
-Pour retirer du catalogue une application publiée automatiquement, supprimez son fichier HTML dans le dossier `applications` sur `main`. Le workflow retire l’entrée correspondante d’`apps-catalog.json`. Après son exécution, cliquez sur **Actualiser** dans le catalogue. Si l’application est déjà installée, utilisez **Supprimer** sur sa carte pour retirer aussi sa copie locale.
+Pour retirer du catalogue une application publiée automatiquement, supprimez son fichier HTML dans le dossier `applications` sur `main`. Le workflow retire l’entrée correspondante d’`apps-catalog.json`. Depuis MY APPS 1.5.1, le launcher vérifie le catalogue toutes les 15 secondes et masque la carte après la publication de la suppression. Il conserve les fichiers installés et leurs données sur le PC.
 
 ## Publier une nouvelle version du launcher
 

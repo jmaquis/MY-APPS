@@ -98,6 +98,7 @@ def build_catalog(catalog, sources, output):
 
     html_sources = sorted(source for source in sources if source.suffix.lower() in {".html", ".htm"})
     source_names = {source.name for source in html_sources}
+    retired = dict(catalog.get("retired", {}))
     packages = []
     seen = set()
     for source in html_sources:
@@ -108,6 +109,7 @@ def build_catalog(catalog, sources, output):
             raise ValueError(f"Plusieurs fichiers HTML utilisent l’identifiant {slug}.")
         seen.add(slug)
         previous = entries.get(slug)
+        retired_version = retired.pop(slug, None)
         previous_source = previous.get("source_file") if previous else None
         if previous_source and previous_source != source.name and previous_source in source_names:
             raise ValueError(f"{source.name} utilise le même identifiant que {previous_source}.")
@@ -118,7 +120,7 @@ def build_catalog(catalog, sources, output):
         if previous_source == source.name and previous.get("source_sha256") == source_hash:
             continue
 
-        version = next_version(previous)
+        version = next_version(previous or ({"version": retired_version} if retired_version else None))
         name = app_name(html, slug)
         manifest = {"schema": 1, "id": slug, "name": name, "version": version}
         path = output / f"{slug}-{version}.zip"
@@ -135,11 +137,11 @@ def build_catalog(catalog, sources, output):
         entries[slug] = entry
         packages.append((path, entry))
 
-    entries = {
-        slug: entry for slug, entry in entries.items()
-        if "source_file" not in entry or entry["source_file"] in source_names
-    }
-    updated_catalog = {**catalog, "apps": list(entries.values())}
+    for slug, entry in list(entries.items()):
+        if "source_file" in entry and entry["source_file"] not in source_names:
+            retired[slug] = entry["version"]
+            del entries[slug]
+    updated_catalog = {**catalog, "apps": list(entries.values()), "retired": retired}
     if len(entries) > 250:
         raise ValueError("Le catalogue MY APPS est limité à 250 applications.")
     if not packages:

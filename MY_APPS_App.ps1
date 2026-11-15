@@ -15,6 +15,7 @@ $packages = Join-Path $root 'Applications'
 $staging = Join-Path $root 'Imports'
 $rollback = Join-Path $root 'Restauration'
 $linksFile = Join-Path $root 'Raccourcis.json'
+$retiredFile = Join-Path $root 'CatalogueRetire.txt'
 $manifestName = 'my-apps.json'
 $githubCatalogUrl = 'https://raw.githubusercontent.com/jmaquis/MY-APPS/main/apps-catalog.json'
 $githubReleasesUrl = 'https://github.com/jmaquis/MY-APPS/releases/download'
@@ -23,7 +24,9 @@ $script:launcherRelease = $null
 $script:launcherUpdateTask = $null
 $script:launcherUpdateInstalled = $false
 $script:githubCatalog = @{}
+$script:retiredAppIds = @{}
 $script:githubCatalogTask = $null
+$script:githubCatalogJson = $null
 $script:githubCatalogState = 'Chargement du catalogue GitHub…'
 $script:githubPackageTask = $null
 $script:githubPackage = $null
@@ -507,6 +510,25 @@ function Receive-LauncherUpdateResult {
     }
 }
 
+function Set-RetiredAppIds($ids) {
+    $previous = ($script:retiredAppIds.Keys | Sort-Object) -join ','
+    [string[]]$lines = @($ids.Keys | Sort-Object)
+    $script:retiredAppIds = $ids
+    if (($lines -join ',') -ceq $previous) { return }
+
+    $temp = "$retiredFile.tmp"
+    try {
+        [IO.File]::WriteAllLines($temp, $lines, [Text.Encoding]::UTF8)
+        if ([IO.File]::Exists($retiredFile)) {
+            [IO.File]::Replace($temp, $retiredFile, [NullString]::Value)
+        } else {
+            [IO.File]::Move($temp, $retiredFile)
+        }
+    } catch [System.IO.IOException] {
+        # Keep the current list in memory if the cache is temporarily unavailable.
+    } catch [System.UnauthorizedAccessException] { }
+}
+
 function Read-GitHubCatalog([string]$json) {
     if ($json.Length -gt 512KB) { throw 'Le catalogue GitHub est trop volumineux.' }
     $catalog = ConvertFrom-Json -InputObject $json
@@ -535,20 +557,31 @@ function Read-GitHubCatalog([string]$json) {
             Url = "$githubReleasesUrl/$($item.tag)/$($item.asset)"
         }
     }
-    return $entries
+    $retired = @{}
+    if ($catalog.PSObject.Properties['retired']) {
+        if ($catalog.retired -isnot [pscustomobject]) { throw 'La liste des applications retirées est invalide.' }
+        foreach ($entry in $catalog.retired.PSObject.Properties) {
+            if ($entry.Name -cnotmatch '^[a-z0-9][a-z0-9-]{0,47}$' -or $entries.ContainsKey($entry.Name)) {
+                throw 'La liste des applications retirées est invalide.'
+            }
+            $retired[$entry.Name] = $true
+        }
+    }
+    [pscustomobject]@{ Apps = $entries; Retired = $retired }
 }
 
-function Start-GitHubCatalogCheck {
+function Start-GitHubCatalogCheck([switch]$automatic) {
     if ($null -ne $script:githubCatalogTask) { return }
-    $script:githubCatalogState = 'Chargement du catalogue GitHub…'
+    if (-not $automatic) { $script:githubCatalogState = 'Chargement du catalogue GitHub…' }
     $ui.RefreshCatalogButton.IsEnabled = $false
     try {
-        $script:githubCatalogTask = $githubHttp.GetStringAsync($githubCatalogUrl)
+        $url = "${githubCatalogUrl}?refresh=$([DateTime]::UtcNow.Ticks)"
+        $script:githubCatalogTask = $githubHttp.GetStringAsync($url)
     } catch {
         $script:githubCatalogState = 'Catalogue GitHub indisponible. Réessaie dans un instant.'
         $ui.RefreshCatalogButton.IsEnabled = $true
     }
-    Render-Apps
+    if (-not $automatic -or $null -eq $script:githubCatalogTask) { Render-Apps }
 }
 
 function Start-GitHubAppDownload($app) {
@@ -566,15 +599,24 @@ function Receive-GitHubResults {
     if ($null -ne $script:githubCatalogTask -and $script:githubCatalogTask.IsCompleted) {
         $task = $script:githubCatalogTask
         $script:githubCatalogTask = $null
+        $previousState = $script:githubCatalogState
+        $changed = $false
         try {
-            $script:githubCatalog = Read-GitHubCatalog ($task.GetAwaiter().GetResult())
+            $json = $task.GetAwaiter().GetResult()
+            if ($json -cne $script:githubCatalogJson) {
+                $catalog = Read-GitHubCatalog $json
+                $script:githubCatalog = $catalog.Apps
+                Set-RetiredAppIds $catalog.Retired
+                $script:githubCatalogJson = $json
+                $changed = $true
+            }
             $script:githubCatalogState = ''
         } catch {
             $script:githubCatalogState = 'Catalogue GitHub indisponible. Réessaie dans un instant.'
         }
         $ui.RefreshCatalogButton.IsEnabled = $true
-        $script:appModels = @(Get-CardModels)
-        Render-Apps
+        if ($changed) { $script:appModels = @(Get-CardModels) }
+        if ($changed -or $previousState -ne $script:githubCatalogState) { Render-Apps }
     }
 
     if ($null -eq $script:githubPackageTask -or -not $script:githubPackageTask.IsCompleted) { return }
@@ -590,6 +632,9 @@ function Receive-GitHubResults {
             [byte[]]$bytes = $task.GetAwaiter().GetResult()
         } catch {
             throw "Téléchargement de $($release.Name) impossible. Réessaie dans un instant."
+        }
+        if ($script:retiredAppIds.ContainsKey($release.Id)) {
+            throw 'Cette application a été retirée du catalogue GitHub.'
         }
         if ($request.IsUpdate -and -not [IO.Directory]::Exists((Join-Path $packages $release.Id))) {
             throw "L’application a été retirée pendant le téléchargement."
@@ -611,7 +656,9 @@ function Receive-GitHubResults {
 }
 
 function Get-CardModels {
-    $apps = @(Get-Apps)
+    $apps = @(Get-Apps | Where-Object {
+        -not $_.Id -or $_.Kind -eq 'HTML local' -or -not $script:retiredAppIds.ContainsKey($_.Id)
+    })
     $installedIds = @{}
     foreach ($app in $apps) {
         if ($app.Id) { $installedIds[$app.Id] = $true }
@@ -868,11 +915,20 @@ try {
         }
     )
 
+    try {
+        if ([IO.File]::Exists($retiredFile)) {
+            foreach ($id in [IO.File]::ReadAllLines($retiredFile, [Text.Encoding]::UTF8)) {
+                if ($id -cmatch '^[a-z0-9][a-z0-9-]{0,47}$') { $script:retiredAppIds[$id] = $true }
+            }
+        }
+    } catch [System.IO.IOException] { } catch [System.UnauthorizedAccessException] { }
     $script:appModels = @(Get-CardModels)
     Render-Apps
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
     $githubHttp = [Net.Http.HttpClient]::new()
     $githubHttp.DefaultRequestHeaders.UserAgent.ParseAdd("MY-APPS/$AppVersion")
+    $githubHttp.DefaultRequestHeaders.CacheControl = [Net.Http.Headers.CacheControlHeaderValue]::new()
+    $githubHttp.DefaultRequestHeaders.CacheControl.NoCache = $true
     $githubHttp.Timeout = [TimeSpan]::FromSeconds(40)
     $githubHttp.MaxResponseContentBufferSize = 100MB
     $githubTimer = [Windows.Threading.DispatcherTimer]::new()
@@ -881,6 +937,9 @@ try {
         Receive-LauncherUpdateResult
         Receive-GitHubResults
     })
+    $catalogTimer = [Windows.Threading.DispatcherTimer]::new()
+    $catalogTimer.Interval = [TimeSpan]::FromSeconds(15)
+    $catalogTimer.Add_Tick({ Start-GitHubCatalogCheck -Automatic })
     $ui.RefreshCatalogButton.Add_Click({ Start-GitHubCatalogCheck })
     $ui.GitHubAlertButton.Add_Click({
         $ui.SearchBox.Clear()
@@ -891,9 +950,11 @@ try {
         Start-GitHubCatalogCheck
     })
     try {
+        $catalogTimer.Start()
         $githubTimer.Start()
         [void]$form.ShowDialog()
     } finally {
+        $catalogTimer.Stop()
         $githubTimer.Stop()
         $githubHttp.Dispose()
     }

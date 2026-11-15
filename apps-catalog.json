@@ -21,5 +21,8 @@
       "source_sha256": "b29dda1b3605db2e56dce1ba84fe4b46dfc9da2241ec406ee3bfb6b0ca0ad05d",
       "tag": "catalogue-23762424b925250a247d8b13"
     }
-  ]
+  ],
+  "retired": {
+    "fixit-suivi-commercial": "1.0.0"
+  }
 }
