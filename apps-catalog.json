@@ -10,6 +10,16 @@
       "source_file": "mes-notes-demo.html",
       "source_sha256": "ca38a2948957f72f2e96935f27bf71ad94059c81770e845f4e74aefdf41a7256",
       "tag": "catalogue-d845a9f97906e9406b101561"
+    },
+    {
+      "id": "carnet-auto",
+      "name": "Octane — Mon carnet auto",
+      "version": "1.0.0",
+      "asset": "carnet-auto-1.0.0.zip",
+      "sha256": "40f04b455db98323a610d4885fb283b039e4bcdaeb70e1ed7a352087bbfdfa03",
+      "source_file": "Carnet_Auto.html",
+      "source_sha256": "5614489de6140d64b54468f8f188d59e5cf6c71983fb45228ab74b9762d49031",
+      "tag": "catalogue-5b54eba31d46b0ebb83c30e9"
     }
   ]
 }
