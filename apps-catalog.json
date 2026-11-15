@@ -2,16 +2,6 @@
   "schema": 1,
   "apps": [
     {
-      "id": "mes-notes-demo",
-      "name": "Mes notes",
-      "version": "1.0.2",
-      "asset": "mes-notes-demo-1.0.2.zip",
-      "sha256": "8b54b473f911aca35d18a926766374d4575d85a6d44a053ceb112606a7e19224",
-      "source_file": "mes-notes-demo.html",
-      "source_sha256": "ca38a2948957f72f2e96935f27bf71ad94059c81770e845f4e74aefdf41a7256",
-      "tag": "catalogue-d845a9f97906e9406b101561"
-    },
-    {
       "id": "carnet-auto",
       "name": "Octane — Mon carnet auto",
       "version": "1.0.0",
