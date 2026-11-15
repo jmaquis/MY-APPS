@@ -20,6 +20,16 @@
       "source_file": "Carnet_de_sante(2).html",
       "source_sha256": "b29dda1b3605db2e56dce1ba84fe4b46dfc9da2241ec406ee3bfb6b0ca0ad05d",
       "tag": "catalogue-23762424b925250a247d8b13"
+    },
+    {
+      "id": "fixit-suivi-commercial",
+      "name": "FIXIT • Mon suivi commercial",
+      "version": "1.0.0",
+      "asset": "fixit-suivi-commercial-1.0.0.zip",
+      "sha256": "cc69163f54ca238a3bda6a4ff9d5e9ae3ecc8d743b748c13be6eea6f25626e97",
+      "source_file": "FIXIT-suivi-commercial.html",
+      "source_sha256": "d948c2a938cfba54f5a75c35e35b325145d3d92b8e34a2813acefeb5206e0277",
+      "tag": "catalogue-92a2920350b0d8583c5713ec"
     }
   ]
 }
