@@ -114,6 +114,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
           <Grid>
             <Grid.ColumnDefinitions>
@@ -133,13 +134,16 @@
             <TextBlock Text="{Binding [Detail]}" ToolTip="{Binding [Path]}" Foreground="{StaticResource Muted}"
                        Margin="0,3,0,0" FontSize="11" TextTrimming="CharacterEllipsis" />
           </StackPanel>
-          <StackPanel Grid.Row="2" Orientation="Horizontal">
+          <StackPanel Grid.Row="2" Orientation="Horizontal" Visibility="{Binding [InstalledActions]}">
             <Button Content="Ouvrir" Tag="Open" Style="{StaticResource Primary}" MinWidth="76"
                     AutomationProperties.Name="{Binding [OpenAccessibleName]}" />
             <Button Content="Supprimer" Tag="Remove" Style="{StaticResource Action}" MinWidth="76"
                     Margin="7,0,0,0"
                     AutomationProperties.Name="{Binding [RemoveAccessibleName]}" />
           </StackPanel>
+          <Button Grid.Row="3" Tag="DownloadApp" Content="{Binding [GitHubActionLabel]}"
+                  Style="{StaticResource Action}" HorizontalAlignment="Left" Margin="0,7,0,0"
+                  Visibility="{Binding [GitHubActionVisibility]}" AutomationProperties.Name="{Binding [GitHubActionName]}" />
         </Grid>
       </Border>
     </DataTemplate>
@@ -210,6 +214,17 @@
               <TextBlock Text="Raccourcis" Margin="10,0,0,0" />
             </StackPanel>
           </RadioButton>
+          <RadioButton x:Name="GitHubNav" GroupName="Catalog" Style="{StaticResource Nav}"
+                       AutomationProperties.Name="Catalogue GitHub">
+            <StackPanel Orientation="Horizontal">
+              <Path Width="16" Height="16" Stretch="Uniform" StrokeThickness="1.4" StrokeLineJoin="Round"
+                    Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"
+                    Data="M1,7 V12 H13 V7 M7,8 V0 M4,5 L7,8 10,5" />
+              <TextBlock Text="Catalogue GitHub" Margin="10,0,0,0" />
+              <TextBlock x:Name="GitHubCount" Margin="6,0,0,0" Foreground="{StaticResource Accent}"
+                         FontWeight="Bold" Visibility="Collapsed" />
+            </StackPanel>
+          </RadioButton>
           <Button x:Name="UpdateButton" Content="Mettre à jour MY APPS" Style="{StaticResource Action}"
                   Margin="0,18,0,0" ToolTip="Installer un ZIP de mise à jour du launcher" />
           <TextBlock x:Name="LauncherVersion" Foreground="{StaticResource Muted}" FontSize="11"
@@ -257,7 +272,13 @@
                     <TextBlock Text="Ajouter un fichier" />
                   </StackPanel>
                 </Button>
+                <Button x:Name="RefreshCatalogButton" Content="Actualiser" Style="{StaticResource Action}"
+                        Margin="9,0,0,0" Visibility="Collapsed" />
               </StackPanel>
+              <Button x:Name="GitHubAlertButton" Style="{StaticResource Action}" Margin="0,9,0,0"
+                      HorizontalAlignment="Left" Visibility="Collapsed" ToolTip="Ouvrir le catalogue GitHub" />
+              <TextBlock x:Name="GitHubStatus" Margin="0,9,0,0" Visibility="Collapsed"
+                         Foreground="{StaticResource Muted}" FontSize="12" />
             </StackPanel>
           </Grid>
         </Border>

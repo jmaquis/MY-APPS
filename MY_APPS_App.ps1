@@ -8,6 +8,7 @@ $ErrorActionPreference = 'Stop'
 
 Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+Add-Type -AssemblyName System.Net.Http
 
 $root = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'MY_APPS'
 $packages = Join-Path $root 'Applications'
@@ -15,6 +16,13 @@ $staging = Join-Path $root 'Imports'
 $rollback = Join-Path $root 'Restauration'
 $linksFile = Join-Path $root 'Raccourcis.json'
 $manifestName = 'my-apps.json'
+$githubCatalogUrl = 'https://raw.githubusercontent.com/jmaquis/MY-APPS/main/apps-catalog.json'
+$githubReleasesUrl = 'https://github.com/jmaquis/MY-APPS/releases/download'
+$script:githubCatalog = @{}
+$script:githubCatalogTask = $null
+$script:githubCatalogState = 'Chargement du catalogue GitHub…'
+$script:githubPackageTask = $null
+$script:githubPackage = $null
 
 function Read-Utf8([string]$path) {
     [IO.File]::ReadAllText($path, [Text.Encoding]::UTF8)
@@ -94,12 +102,13 @@ function Save-Links([object[]]$links) {
 
 function Get-Apps {
     foreach ($link in @(Get-Links)) {
-        [pscustomobject]@{ Name = $link.name; Path = $link.path; Version = ''; Kind = 'Raccourci' }
+        [pscustomobject]@{ Id = ''; Name = $link.name; Path = $link.path; Version = ''; Kind = 'Raccourci' }
     }
     foreach ($directory in Get-ChildItem -LiteralPath $packages -Directory) {
         try {
             $manifest = Read-AppManifest $directory.FullName
             [pscustomobject]@{
+                Id = $directory.Name
                 Name = $manifest.name
                 Path = Join-Path $directory.FullName 'index.html'
                 Version = $manifest.version
@@ -111,6 +120,7 @@ function Get-Apps {
             }
         } catch {
             [pscustomobject]@{
+                Id = $directory.Name
                 Name = $directory.Name
                 Path = Join-Path $directory.FullName 'index.html'
                 Version = ''
@@ -159,11 +169,29 @@ function Install-AppDirectory([string]$work) {
     }
 }
 
-function Import-AppPack([string]$zipPath) {
+function Import-AppPack([string]$zipPath, $release = $null) {
     $work = Join-Path $staging ([guid]::NewGuid().ToString())
     [void][IO.Directory]::CreateDirectory($work)
     try {
         Expand-AppPack $zipPath $work
+        if ($null -ne $release) {
+            $manifest = Read-AppManifest $work
+            if ($manifest.id -cne $release.Id -or $manifest.version -cne $release.Version.ToString() -or
+                ($manifest.PSObject.Properties['source'] -and $manifest.source -eq 'html')) {
+                throw 'Le pack téléchargé ne correspond pas à la version du catalogue GitHub.'
+            }
+
+            $target = Join-Path $packages $release.Id
+            if ([IO.Directory]::Exists($target)) {
+                $currentManifest = Read-AppManifest $target
+                [version]$currentVersion = $null
+                if (($currentManifest.PSObject.Properties['source'] -and $currentManifest.source -eq 'html') -or
+                    -not [version]::TryParse($currentManifest.version, [ref]$currentVersion) -or
+                    $currentVersion -ge $release.Version) {
+                    throw 'Ce pack ne correspond pas à une version plus récente de cette application.'
+                }
+            }
+        }
         Install-AppDirectory $work
     } finally {
         if ([IO.Directory]::Exists($work)) {
@@ -356,11 +384,145 @@ function Install-LauncherUpdate([string]$zipPath) {
     }
 }
 
+function Read-GitHubCatalog([string]$json) {
+    if ($json.Length -gt 512KB) { throw 'Le catalogue GitHub est trop volumineux.' }
+    $catalog = ConvertFrom-Json -InputObject $json
+    if ($catalog.schema -ne 1 -or $catalog.apps -isnot [array] -or $catalog.apps.Count -gt 250) {
+        throw 'Le format du catalogue GitHub est invalide.'
+    }
+
+    $entries = @{}
+    foreach ($item in $catalog.apps) {
+        [version]$version = $null
+        if ($item.id -isnot [string] -or $item.id -cnotmatch '^[a-z0-9][a-z0-9-]{0,47}$' -or
+            $item.id -match '^(con|prn|aux|nul|com[0-9]|lpt[0-9])$' -or $entries.ContainsKey($item.id) -or
+            $item.name -isnot [string] -or $item.name.Trim().Length -eq 0 -or $item.name.Length -gt 70 -or
+            $item.version -isnot [string] -or -not [version]::TryParse($item.version, [ref]$version) -or
+            $version.Build -lt 0 -or $version.Revision -ne -1 -or $version.ToString() -cne $item.version -or
+            $item.tag -isnot [string] -or $item.tag -cnotmatch '^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$' -or
+            $item.asset -isnot [string] -or $item.asset -cnotmatch '^[a-zA-Z0-9][a-zA-Z0-9._-]{0,100}\.zip$' -or
+            $item.sha256 -isnot [string] -or $item.sha256 -notmatch '^[a-f0-9]{64}$') {
+            throw 'Une application du catalogue GitHub est invalide.'
+        }
+        $entries[$item.id] = [pscustomobject]@{
+            Id = $item.id
+            Name = $item.name
+            Version = $version
+            Sha256 = $item.sha256
+            Url = "$githubReleasesUrl/$($item.tag)/$($item.asset)"
+        }
+    }
+    return $entries
+}
+
+function Start-GitHubCatalogCheck {
+    if ($null -ne $script:githubCatalogTask) { return }
+    $script:githubCatalogState = 'Chargement du catalogue GitHub…'
+    $ui.RefreshCatalogButton.IsEnabled = $false
+    try {
+        $script:githubCatalogTask = $githubHttp.GetStringAsync($githubCatalogUrl)
+    } catch {
+        $script:githubCatalogState = 'Catalogue GitHub indisponible. Réessaie dans un instant.'
+        $ui.RefreshCatalogButton.IsEnabled = $true
+    }
+    Render-Apps
+}
+
+function Start-GitHubAppDownload($app) {
+    $release = $app.Release
+    if ($null -ne $script:githubPackageTask) {
+        $status.Text = 'Un téléchargement est déjà en cours.'
+        return
+    }
+    $script:githubPackageTask = $githubHttp.GetByteArrayAsync($release.Url)
+    $script:githubPackage = @{ Release = $release; IsUpdate = -not $app.IsCatalogOnly }
+    $status.Text = "Téléchargement de $($release.Name)…"
+}
+
+function Receive-GitHubResults {
+    if ($null -ne $script:githubCatalogTask -and $script:githubCatalogTask.IsCompleted) {
+        $task = $script:githubCatalogTask
+        $script:githubCatalogTask = $null
+        try {
+            $script:githubCatalog = Read-GitHubCatalog ($task.GetAwaiter().GetResult())
+            $script:githubCatalogState = ''
+        } catch {
+            $script:githubCatalogState = 'Catalogue GitHub indisponible. Réessaie dans un instant.'
+        }
+        $ui.RefreshCatalogButton.IsEnabled = $true
+        $script:appModels = @(Get-CardModels)
+        Render-Apps
+    }
+
+    if ($null -eq $script:githubPackageTask -or -not $script:githubPackageTask.IsCompleted) { return }
+    $task = $script:githubPackageTask
+    $request = $script:githubPackage
+    $release = $request.Release
+    $script:githubPackageTask = $null
+    $script:githubPackage = $null
+    $zipPath = Join-Path $staging ('github-' + [guid]::NewGuid().ToString() + '.zip')
+
+    try {
+        try {
+            [byte[]]$bytes = $task.GetAwaiter().GetResult()
+        } catch {
+            throw "Téléchargement de $($release.Name) impossible. Réessaie dans un instant."
+        }
+        if ($request.IsUpdate -and -not [IO.Directory]::Exists((Join-Path $packages $release.Id))) {
+            throw "L’application a été retirée pendant le téléchargement."
+        }
+        [IO.File]::WriteAllBytes($zipPath, $bytes)
+        if ((Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash -ne $release.Sha256) {
+            throw 'Le ZIP téléchargé diffère du fichier annoncé sur GitHub.'
+        }
+        $status.Text = "ZIP téléchargé · $($release.Name)"
+        Import-AppPack $zipPath $release
+    } catch {
+        $status.Text = "Installation interrompue · $($release.Name)"
+        Show-Error $_.Exception.Message
+    } finally {
+        if ([IO.File]::Exists($zipPath)) {
+            try { [IO.File]::Delete($zipPath) } catch { }
+        }
+    }
+}
+
 function Get-CardModels {
-    foreach ($app in Get-Apps | Sort-Object Name) {
+    $apps = @(Get-Apps)
+    $installedIds = @{}
+    foreach ($app in $apps) {
+        if ($app.Id) { $installedIds[$app.Id] = $true }
+    }
+    foreach ($release in $script:githubCatalog.Values) {
+        if (-not $installedIds.ContainsKey($release.Id)) {
+            $apps += [pscustomobject]@{
+                Id = $release.Id
+                Name = $release.Name
+                Version = $release.Version.ToString()
+                Kind = 'Catalogue GitHub'
+                Path = ''
+            }
+        }
+    }
+
+    foreach ($app in $apps | Sort-Object Name) {
+        $isCatalogOnly = $app.Kind -eq 'Catalogue GitHub'
+        $release = $null
+        if ($app.Id -and $script:githubCatalog.ContainsKey($app.Id)) {
+            $candidate = $script:githubCatalog[$app.Id]
+            [version]$currentVersion = $null
+            if ($isCatalogOnly -or ($app.Kind -eq 'Pack local' -and
+                [version]::TryParse($app.Version, [ref]$currentVersion) -and $candidate.Version -gt $currentVersion)) {
+                $release = $candidate
+            }
+        }
         $isLink = $app.Kind -eq 'Raccourci'
         $detail = if ($isLink) {
             [IO.Path]::GetFileName($app.Path)
+        } elseif ($isCatalogOnly) {
+            "Nouvelle application · version $($app.Version)"
+        } elseif ($null -ne $release) {
+            "Mise à jour disponible · $($release.Version)"
         } elseif ($app.Kind -eq 'HTML local') {
             'Copie locale'
         } elseif ($app.Version) {
@@ -374,6 +536,12 @@ function Get-CardModels {
             Kind = $app.Kind
             Detail = $detail
             IsLink = $isLink
+            IsCatalogOnly = $isCatalogOnly
+            Release = $release
+            InstalledActions = if ($isCatalogOnly) { 'Collapsed' } else { 'Visible' }
+            GitHubActionVisibility = if ($null -eq $release) { 'Collapsed' } else { 'Visible' }
+            GitHubActionLabel = if ($isCatalogOnly) { 'Installer' } else { 'Mettre à jour' }
+            GitHubActionName = if ($isCatalogOnly) { "Installer $($app.Name)" } else { "Mettre à jour $($app.Name)" }
             IconBackground = if ($isLink) { '#1E3A3D' } else { '#362C55' }
             IconStroke = if ($isLink) { '#A9E3C8' } else { '#D1C3FF' }
             IconGeometry = if ($isLink) {
@@ -391,14 +559,33 @@ function Render-Apps {
     $query = $ui.SearchBox.Text.Trim()
     $linksOnly = $ui.LinkNav.IsChecked -eq $true
     $packsOnly = $ui.PackNav.IsChecked -eq $true
+    $githubOnly = $ui.GitHubNav.IsChecked -eq $true
+    $available = @($script:appModels | Where-Object { $null -ne $_.Release })
+    $newCount = @($available | Where-Object { $_.IsCatalogOnly }).Count
+    $updateCount = $available.Count - $newCount
+    $ui.GitHubCount.Text = "$($available.Count)"
+    $ui.GitHubCount.Visibility = if ($available.Count -gt 0) { 'Visible' } else { 'Collapsed' }
+    $alerts = @(
+        if ($newCount -eq 1) { '1 nouvelle application' }
+        elseif ($newCount -gt 1) { "$newCount nouvelles applications" }
+        if ($updateCount -eq 1) { '1 mise à jour disponible' }
+        elseif ($updateCount -gt 1) { "$updateCount mises à jour disponibles" }
+    )
+    $ui.GitHubAlertButton.Content = $alerts -join ' · '
+    $ui.GitHubAlertButton.Visibility = if (-not $githubOnly -and $alerts.Count -gt 0) { 'Visible' } else { 'Collapsed' }
+    $ui.RefreshCatalogButton.Visibility = if ($githubOnly) { 'Visible' } else { 'Collapsed' }
+    $ui.GitHubStatus.Text = $script:githubCatalogState
+    $ui.GitHubStatus.Visibility = if ($githubOnly -and $script:githubCatalogState) { 'Visible' } else { 'Collapsed' }
 
     $ui.PageTitle.Text = if ($linksOnly) { 'Raccourcis' }
-        elseif ($packsOnly) { 'Applications locales' } else { 'Mes applications' }
+        elseif ($packsOnly) { 'Applications locales' }
+        elseif ($githubOnly) { 'Catalogue GitHub' } else { 'Mes applications' }
     $ui.SearchHint.Visibility = if ($ui.SearchBox.Text.Length -eq 0) { 'Visible' } else { 'Collapsed' }
 
     $visibleApps = @(
         foreach ($app in $script:appModels) {
-            if (($linksOnly -and -not $app.IsLink) -or ($packsOnly -and $app.IsLink)) { continue }
+            if (($githubOnly -and $null -eq $app.Release) -or (-not $githubOnly -and $app.IsCatalogOnly) -or
+                ($linksOnly -and -not $app.IsLink) -or ($packsOnly -and $app.IsLink)) { continue }
             if ($query -and $compareInfo.IndexOf($app.Name, $query, $compareOptions) -lt 0) { continue }
             $app
         }
@@ -414,6 +601,13 @@ function Render-Apps {
     if ($query) {
         $ui.EmptyTitle.Text = 'Aucun résultat'
         $ui.EmptyBody.Text = "Essaie un autre nom d’application."
+    } elseif ($githubOnly) {
+        $ui.EmptyTitle.Text = if ($script:githubCatalogState) { 'Catalogue GitHub' } else { 'Tout est à jour' }
+        $ui.EmptyBody.Text = if ($script:githubCatalogState) {
+            'Tes applications installées sont disponibles dans la bibliothèque.'
+        } else {
+            'Les nouvelles applications et les mises à jour apparaîtront ici.'
+        }
     } elseif ($linksOnly) {
         $ui.EmptyTitle.Text = 'Aucun raccourci'
         $ui.EmptyBody.Text = 'Ajoute un fichier EXE pour créer un raccourci.'
@@ -490,7 +684,8 @@ try {
         'MinimizeButton', 'MaximizeButton', 'MaximizeIcon', 'CloseButton',
         'AllNav', 'PackNav', 'LinkNav', 'PageTitle', 'AddButton', 'ImportButton',
         'AppCount', 'SearchBox', 'SearchHint', 'AppsGrid', 'EmptyState',
-        'EmptyTitle', 'EmptyBody', 'StatusText', 'UpdateButton', 'LauncherVersion'
+        'EmptyTitle', 'EmptyBody', 'StatusText', 'UpdateButton', 'LauncherVersion',
+        'GitHubNav', 'GitHubCount', 'GitHubStatus', 'RefreshCatalogButton', 'GitHubAlertButton'
     )) {
         $ui[$name] = $form.FindName($name)
         if ($null -eq $ui[$name]) { throw "Élément d’interface introuvable : $name" }
@@ -529,7 +724,7 @@ try {
         } catch { Show-Error $_.Exception.Message }
     })
     $ui.SearchBox.Add_TextChanged({ Render-Apps })
-    foreach ($navigation in @($ui.AllNav, $ui.PackNav, $ui.LinkNav)) {
+    foreach ($navigation in @($ui.AllNav, $ui.PackNav, $ui.LinkNav, $ui.GitHubNav)) {
         $navigation.Add_Checked({ Render-Apps })
     }
     $ui.AppsGrid.AddHandler(
@@ -543,6 +738,7 @@ try {
                 switch ($button.Tag) {
                     'Open' { Open-App $app }
                     'Remove' { Remove-App $app }
+                    'DownloadApp' { Start-GitHubAppDownload $app }
                 }
             } catch { Show-Error $_.Exception.Message }
         }
@@ -550,7 +746,26 @@ try {
 
     $script:appModels = @(Get-CardModels)
     Render-Apps
-    [void]$form.ShowDialog()
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    $githubHttp = [Net.Http.HttpClient]::new()
+    $githubHttp.Timeout = [TimeSpan]::FromSeconds(40)
+    $githubHttp.MaxResponseContentBufferSize = 100MB
+    $githubTimer = [Windows.Threading.DispatcherTimer]::new()
+    $githubTimer.Interval = [TimeSpan]::FromMilliseconds(300)
+    $githubTimer.Add_Tick({ Receive-GitHubResults })
+    $ui.RefreshCatalogButton.Add_Click({ Start-GitHubCatalogCheck })
+    $ui.GitHubAlertButton.Add_Click({
+        $ui.SearchBox.Clear()
+        $ui.GitHubNav.IsChecked = $true
+    })
+    $form.Add_ContentRendered({ Start-GitHubCatalogCheck })
+    try {
+        $githubTimer.Start()
+        [void]$form.ShowDialog()
+    } finally {
+        $githubTimer.Stop()
+        $githubHttp.Dispose()
+    }
 } finally {
     if ($ownsMutex) { $mutex.ReleaseMutex() }
     $mutex.Dispose()
