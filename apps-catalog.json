@@ -4,10 +4,12 @@
     {
       "id": "mes-notes-demo",
       "name": "Mes notes",
-      "version": "1.0.1",
-      "tag": "v1.4.0",
-      "asset": "Mes_Notes_v1.0.1.zip",
-      "sha256": "6a05345f6f666319359a4e7ba665573b679308785c49a09d815c43d777766a51"
+      "version": "1.0.2",
+      "asset": "mes-notes-demo-1.0.2.zip",
+      "sha256": "8b54b473f911aca35d18a926766374d4575d85a6d44a053ceb112606a7e19224",
+      "source_file": "mes-notes-demo.html",
+      "source_sha256": "ca38a2948957f72f2e96935f27bf71ad94059c81770e845f4e74aefdf41a7256",
+      "tag": "catalogue-d845a9f97906e9406b101561"
     }
   ]
 }
