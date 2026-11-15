@@ -5,7 +5,8 @@ MY APPS est un launcher Windows pour organiser et ouvrir ses applications locale
 ## Télécharger ou mettre à jour le launcher
 
 - **Nouvelle installation**. Téléchargez le ZIP Windows dans [la dernière version](../../releases/latest), décompressez-le, puis lancez `MY_APPS.cmd`.
-- **Installation existante depuis la v1.3.0**. Téléchargez le ZIP de mise à jour du launcher dans la même release. Dans MY APPS, cliquez sur **Mettre à jour MY APPS**, sélectionnez le ZIP, confirmez puis relancez le launcher.
+- **À partir de la v1.5.0**. MY APPS vérifie les versions publiées sur GitHub à l’ouverture. Si une version est disponible, cliquez sur **Installer la v…**, confirmez, puis relancez le launcher. Le bouton **Installer un ZIP** permet aussi d’utiliser un fichier téléchargé.
+- **Versions 1.3.0 à 1.4.1**. Téléchargez une fois le ZIP de mise à jour dans la dernière release. Dans MY APPS, cliquez sur **Mettre à jour MY APPS**, sélectionnez le ZIP, confirmez puis relancez le launcher.
 
 Les applications installées et les raccourcis sont stockés dans le profil Windows.
 
@@ -22,6 +23,10 @@ Les mises à jour du catalogue reconnaissent un pack par son identifiant. Un fic
 3. Attendez la fin de la [publication automatique](../../actions/workflows/publier-applications.yml), puis cliquez sur **Actualiser** dans le **Catalogue GitHub** de MY APPS. La carte proposera **Installer l’application**, également sur l’accueil.
 
 Pour une mise à jour, remplacez le fichier au même endroit avec le même nom, puis choisissez **Mettre à jour** sur la carte. Le titre de l’onglet HTML sert de nom dans le catalogue. Les fichiers de ce dépôt sont publics.
+
+## Publier une nouvelle version du launcher
+
+Augmentez `$baseVersion` dans `MY_APPS.ps1` et envoyez les modifications ensemble sur `main`. Le [workflow de publication Windows](../../actions/workflows/publier-launcher.yml) charge l’interface, construit les deux ZIP et publie la release stable que le launcher détecte au prochain démarrage.
 
 ## Publier manuellement un pack ZIP
 

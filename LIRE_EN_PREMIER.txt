@@ -1,4 +1,4 @@
-﻿MY APPS • Windows • version 1.4.1
+﻿MY APPS • Windows
 
 SI VOUS UTILISEZ DÉJÀ MY APPS
 Fermez MY APPS et décompressez cette archive dans le dossier qui contient
@@ -7,7 +7,7 @@ puis relancez MY_APPS.cmd. Vos applications locales et vos raccourcis
 sont retrouvés depuis le même compte Windows.
 
 PREMIER LANCEMENT
-1. Décompressez MY_APPS_Windows_v1.4.1.zip dans un dossier de votre choix.
+1. Décompressez le ZIP MY_APPS_Windows dans un dossier de votre choix.
 2. Ouvrez ce dossier et double-cliquez sur MY_APPS.cmd.
 3. Cliquez sur « Importer un pack ZIP… » et sélectionnez Demo_Mes_Notes.zip.
    Le pack de démonstration doit rester au format ZIP.
@@ -39,18 +39,13 @@ version, puis importez depuis la copie locale.
 Le launcher ouvre le HTML avec le navigateur par défaut de Windows.
 
 METTRE À JOUR LE LAUNCHER
-Dans le menu de gauche, cliquez sur « Mettre à jour MY APPS ». Sélectionnez
-le ZIP de la nouvelle version du launcher et confirmez l’installation.
-Fermez puis relancez MY_APPS pour utiliser la version installée.
-La version en cours figure sous le bouton. MY APPS peut utiliser la
-version précédente si la nouvelle échoue au démarrage.
-Sélectionnez un ZIP de mise à jour fourni par une source de confiance.
-
-Pour préparer un ZIP de mise à jour du launcher, placez à sa racine
-MY_APPS_App.ps1, MY_APPS.xaml et my-apps-update.json pour la nouvelle version.
-Le fichier JSON indique le produit et la version, par exemple :
-{"schema":1,"product":"MY_APPS_LAUNCHER","version":"1.4.2"}
-Le script reçoit AppVersion et VersionsPath en paramètres au démarrage.
+MY APPS vérifie les versions disponibles sur GitHub au démarrage.
+Si le menu de gauche propose « Installer la v… », cliquez sur ce bouton
+et confirmez. Fermez puis relancez MY APPS pour utiliser la nouvelle version.
+Utilisez « Vérifier les mises à jour » pour interroger GitHub à nouveau,
+ou « Installer un ZIP » si vous avez déjà téléchargé le ZIP de mise à jour.
+La version en cours figure sous les boutons. MY APPS peut ouvrir la version
+précédente si la nouvelle échoue au démarrage.
 
 CATALOGUE GITHUB
 Le catalogue de jmaquis/MY-APPS est vérifié à l’ouverture. Les applications

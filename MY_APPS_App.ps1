@@ -18,6 +18,10 @@ $linksFile = Join-Path $root 'Raccourcis.json'
 $manifestName = 'my-apps.json'
 $githubCatalogUrl = 'https://raw.githubusercontent.com/jmaquis/MY-APPS/main/apps-catalog.json'
 $githubReleasesUrl = 'https://github.com/jmaquis/MY-APPS/releases/download'
+$githubLauncherReleaseUrl = 'https://api.github.com/repos/jmaquis/MY-APPS/releases/latest'
+$script:launcherRelease = $null
+$script:launcherUpdateTask = $null
+$script:launcherUpdateInstalled = $false
 $script:githubCatalog = @{}
 $script:githubCatalogTask = $null
 $script:githubCatalogState = 'Chargement du catalogue GitHub…'
@@ -304,7 +308,7 @@ function Choose-File([string]$title, [string]$filter) {
     if ($dialog.ShowDialog($form) -eq $true) { $dialog.FileName }
 }
 
-function Install-LauncherUpdate([string]$zipPath) {
+function Install-LauncherUpdate([string]$zipPath, [version]$expectedVersion) {
     $expected = @('my-apps-update.json', 'MY_APPS_App.ps1', 'MY_APPS.xaml')
     [void][IO.Directory]::CreateDirectory($VersionsPath)
     $work = Join-Path $VersionsPath ('.import-' + [guid]::NewGuid().ToString())
@@ -337,6 +341,9 @@ function Install-LauncherUpdate([string]$zipPath) {
         if (-not [version]::TryParse($manifest.version, [ref]$newVersion) -or
             $newVersion.Build -lt 0 -or $newVersion.Revision -ne -1 -or $newVersion.ToString() -cne $manifest.version) {
             throw 'La version du ZIP doit être au format x.y.z.'
+        }
+        if ($null -ne $expectedVersion -and $newVersion -ne $expectedVersion) {
+            throw 'La version du ZIP diffère de celle annoncée sur GitHub.'
         }
         if ($newVersion -le $AppVersion) {
             throw "MY APPS $AppVersion est déjà à jour par rapport à ce ZIP ($newVersion)."
@@ -371,7 +378,10 @@ function Install-LauncherUpdate([string]$zipPath) {
         if ($reply -ne 'Yes') { return }
 
         [IO.Directory]::Move($work, $destination)
+        $script:launcherUpdateInstalled = $true
         $ui.UpdateButton.IsEnabled = $false
+        $ui.OnlineUpdateButton.IsEnabled = $false
+        $ui.LauncherUpdateStatus.Text = "Relance MY APPS pour ouvrir la v$newVersion."
         $status.Text = "Version $newVersion installée · Relance MY APPS"
         [void][System.Windows.MessageBox]::Show(
             $form, "Version $newVersion installée. Ferme puis relance MY APPS pour l’utiliser.",
@@ -381,6 +391,119 @@ function Install-LauncherUpdate([string]$zipPath) {
         if ([IO.Directory]::Exists($work)) {
             try { [IO.Directory]::Delete($work, $true) } catch { }
         }
+    }
+}
+
+function Read-LauncherRelease([string]$json) {
+    $release = ConvertFrom-Json -InputObject $json
+    if ($release.draft -ne $false -or $release.prerelease -ne $false -or
+        $release.tag_name -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
+        throw 'La version annoncée par GitHub est invalide.'
+    }
+
+    $tag = [string]$release.tag_name
+    $versionText = $tag.Substring(1)
+    [version]$version = $null
+    if (-not [version]::TryParse($versionText, [ref]$version) -or $version.ToString() -cne $versionText) {
+        throw 'La version annoncée par GitHub est invalide.'
+    }
+    if ($version -le $AppVersion) { return }
+
+    $assetName = "MY_APPS_Mise_a_jour_${tag}.zip"
+    $assets = @($release.assets | Where-Object { $_.name -ceq $assetName })
+    if ($assets.Count -ne 1 -or $assets[0].state -cne 'uploaded' -or
+        $assets[0].size -le 0 -or $assets[0].size -gt 16MB -or
+        $assets[0].digest -cnotmatch '^sha256:[a-f0-9]{64}$') {
+        throw 'Le ZIP de mise à jour annoncé par GitHub est indisponible.'
+    }
+
+    [pscustomobject]@{
+        Version = $version
+        Url = "$githubReleasesUrl/$tag/$assetName"
+        Size = $assets[0].size
+        Sha256 = $assets[0].digest.Substring(7)
+    }
+}
+
+function Start-LauncherUpdateCheck {
+    if ($script:launcherUpdateInstalled -or $null -ne $script:launcherUpdateTask) { return }
+    $script:launcherRelease = $null
+    $ui.OnlineUpdateButton.Content = 'Vérifier les mises à jour'
+    $ui.OnlineUpdateButton.IsEnabled = $false
+    $ui.LauncherUpdateStatus.Text = 'Vérification sur GitHub…'
+    try {
+        $script:launcherUpdateTask = $githubHttp.GetStringAsync($githubLauncherReleaseUrl)
+    } catch {
+        $ui.LauncherUpdateStatus.Text = 'Vérification impossible.'
+        $ui.OnlineUpdateButton.IsEnabled = $true
+    }
+}
+
+function Start-LauncherUpdateDownload {
+    if ($script:launcherUpdateInstalled -or $null -ne $script:launcherUpdateTask) { return }
+    if ($null -eq $script:launcherRelease) {
+        Start-LauncherUpdateCheck
+        return
+    }
+    $ui.OnlineUpdateButton.IsEnabled = $false
+    $ui.UpdateButton.IsEnabled = $false
+    $ui.LauncherUpdateStatus.Text = "Téléchargement de la v$($script:launcherRelease.Version)…"
+    try {
+        $script:launcherUpdateTask = $githubHttp.GetByteArrayAsync($script:launcherRelease.Url)
+    } catch {
+        $ui.LauncherUpdateStatus.Text = 'Téléchargement impossible.'
+        $ui.OnlineUpdateButton.IsEnabled = $true
+        $ui.UpdateButton.IsEnabled = $true
+    }
+}
+
+function Receive-LauncherUpdateResult {
+    if ($script:launcherUpdateInstalled -or $null -eq $script:launcherUpdateTask -or -not $script:launcherUpdateTask.IsCompleted) { return }
+    $task = $script:launcherUpdateTask
+    $script:launcherUpdateTask = $null
+
+    if ($null -eq $script:launcherRelease) {
+        try {
+            $script:launcherRelease = Read-LauncherRelease ($task.GetAwaiter().GetResult())
+            if ($null -eq $script:launcherRelease) {
+                $ui.LauncherUpdateStatus.Text = 'MY APPS est à jour.'
+            } else {
+                $version = $script:launcherRelease.Version
+                $ui.LauncherUpdateStatus.Text = "Version $version disponible"
+                $ui.OnlineUpdateButton.Content = "Installer la v$version"
+            }
+        } catch {
+            $ui.LauncherUpdateStatus.Text = 'Vérification impossible. Réessaie.'
+        } finally {
+            $ui.OnlineUpdateButton.IsEnabled = -not $script:launcherUpdateInstalled
+        }
+        return
+    }
+
+    $release = $script:launcherRelease
+    $zipPath = Join-Path $staging ('launcher-' + [guid]::NewGuid().ToString() + '.zip')
+    try {
+        [byte[]]$bytes = $task.GetAwaiter().GetResult()
+        if ($bytes.Length -ne $release.Size) {
+            throw 'La taille du ZIP diffère de celle annoncée sur GitHub.'
+        }
+        [IO.File]::WriteAllBytes($zipPath, $bytes)
+        if ((Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash -ne $release.Sha256) {
+            throw 'Le ZIP téléchargé diffère du fichier annoncé sur GitHub.'
+        }
+        Install-LauncherUpdate $zipPath $release.Version
+        if (-not $script:launcherUpdateInstalled) {
+            $ui.LauncherUpdateStatus.Text = "Version $($release.Version) disponible"
+        }
+    } catch {
+        $ui.LauncherUpdateStatus.Text = 'Mise à jour interrompue.'
+        Show-Error $_.Exception.Message
+    } finally {
+        if ([IO.File]::Exists($zipPath)) {
+            try { [IO.File]::Delete($zipPath) } catch { }
+        }
+        $ui.OnlineUpdateButton.IsEnabled = -not $script:launcherUpdateInstalled
+        $ui.UpdateButton.IsEnabled = -not $script:launcherUpdateInstalled
     }
 }
 
@@ -685,7 +808,7 @@ try {
         'AllNav', 'PackNav', 'LinkNav', 'PageTitle', 'AddButton', 'ImportButton',
         'AppCount', 'SearchBox', 'SearchHint', 'AppsGrid', 'EmptyState',
         'EmptyTitle', 'EmptyBody', 'StatusText', 'UpdateButton', 'LauncherVersion',
-        'GitHubNav', 'GitHubCount', 'GitHubStatus', 'RefreshCatalogButton', 'GitHubAlertButton'
+        'OnlineUpdateButton', 'LauncherUpdateStatus', 'GitHubNav', 'GitHubCount', 'GitHubStatus', 'RefreshCatalogButton', 'GitHubAlertButton'
     )) {
         $ui[$name] = $form.FindName($name)
         if ($null -eq $ui[$name]) { throw "Élément d’interface introuvable : $name" }
@@ -717,6 +840,7 @@ try {
             if ($path) { Import-AppPack $path }
         } catch { Show-Error $_.Exception.Message }
     })
+    $ui.OnlineUpdateButton.Add_Click({ Start-LauncherUpdateDownload })
     $ui.UpdateButton.Add_Click({
         try {
             $path = Choose-File 'Choisir une mise à jour du launcher MY APPS' 'Mise à jour MY APPS (*.zip)|*.zip'
@@ -748,17 +872,24 @@ try {
     Render-Apps
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
     $githubHttp = [Net.Http.HttpClient]::new()
+    $githubHttp.DefaultRequestHeaders.UserAgent.ParseAdd("MY-APPS/$AppVersion")
     $githubHttp.Timeout = [TimeSpan]::FromSeconds(40)
     $githubHttp.MaxResponseContentBufferSize = 100MB
     $githubTimer = [Windows.Threading.DispatcherTimer]::new()
     $githubTimer.Interval = [TimeSpan]::FromMilliseconds(300)
-    $githubTimer.Add_Tick({ Receive-GitHubResults })
+    $githubTimer.Add_Tick({
+        Receive-LauncherUpdateResult
+        Receive-GitHubResults
+    })
     $ui.RefreshCatalogButton.Add_Click({ Start-GitHubCatalogCheck })
     $ui.GitHubAlertButton.Add_Click({
         $ui.SearchBox.Clear()
         $ui.GitHubNav.IsChecked = $true
     })
-    $form.Add_ContentRendered({ Start-GitHubCatalogCheck })
+    $form.Add_ContentRendered({
+        Start-LauncherUpdateCheck
+        Start-GitHubCatalogCheck
+    })
     try {
         $githubTimer.Start()
         [void]$form.ShowDialog()

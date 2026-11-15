@@ -231,8 +231,12 @@
                          FontWeight="Bold" Visibility="Collapsed" />
             </StackPanel>
           </RadioButton>
-          <Button x:Name="UpdateButton" Content="Mettre à jour MY APPS" Style="{StaticResource Action}"
-                  Margin="0,18,0,0" ToolTip="Installer un ZIP de mise à jour du launcher" />
+          <Button x:Name="OnlineUpdateButton" Content="Vérifier les mises à jour" Style="{StaticResource Action}"
+                  Margin="0,18,0,0" ToolTip="Vérifier et installer les nouvelles versions de MY APPS depuis GitHub" />
+          <TextBlock x:Name="LauncherUpdateStatus" Foreground="{StaticResource Accent}" FontSize="11"
+                     TextWrapping="Wrap" Margin="12,6,8,0" />
+          <Button x:Name="UpdateButton" Content="Installer un ZIP" Style="{StaticResource Action}"
+                  Margin="0,9,0,0" ToolTip="Installer un ZIP de mise à jour du launcher depuis ton PC" />
           <TextBlock x:Name="LauncherVersion" Foreground="{StaticResource Muted}" FontSize="11"
                      Margin="12,8,0,0" />
         </StackPanel>

@@ -1,0 +1,66 @@
+name: Publier MY APPS pour Windows
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'MY_APPS.ps1'
+      - '.github/workflows/publier-launcher.yml'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: my-apps-launcher-main
+  cancel-in-progress: false
+
+jobs:
+  publier:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-2025
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - name: Vérifier les scripts et charger l’interface Windows
+        run: |
+          foreach ($path in @('MY_APPS.ps1', 'MY_APPS_App.ps1')) {
+              $tokens = $null
+              $parseErrors = $null
+              [void][System.Management.Automation.Language.Parser]::ParseFile(
+                  (Join-Path $PWD $path), [ref]$tokens, [ref]$parseErrors
+              )
+              if ($parseErrors.Count) { throw ($parseErrors -join [Environment]::NewLine) }
+          }
+          Add-Type -AssemblyName PresentationFramework
+          $reader = [Xml.XmlReader]::Create((Join-Path $PWD 'MY_APPS.xaml'))
+          try {
+              $window = [Windows.Markup.XamlReader]::Load($reader)
+              foreach ($name in @('OnlineUpdateButton', 'LauncherUpdateStatus', 'UpdateButton')) {
+                  if ($null -eq $window.FindName($name)) { throw "Élément introuvable : $name" }
+              }
+          } finally {
+              $reader.Dispose()
+          }
+      - name: Construire les deux ZIP et publier la version stable
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = python scripts/preparer_launcher.py dist
+          if ($LASTEXITCODE -ne 0) { throw 'Échec de la préparation des ZIP.' }
+          $tag = "v$version"
+          $latestTag = gh api "repos/$env:GITHUB_REPOSITORY/releases/latest" --jq '.tag_name'
+          if ($LASTEXITCODE -ne 0) { throw 'Impossible de vérifier la dernière version stable.' }
+          if ([version]$version -le [version]($latestTag.Substring(1))) {
+              Write-Host "La version $tag est déjà publiée ou a été remplacée."
+              exit 0
+          }
+          gh release create $tag "dist/MY_APPS_Mise_a_jour_$tag.zip" "dist/MY_APPS_Windows_$tag.zip" `
+            --target $env:GITHUB_SHA --title "MY APPS $tag" --generate-notes --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Échec de la publication GitHub.' }
