@@ -28,6 +28,7 @@ $script:launcherUpdateInstalled = $false
 $script:githubCatalog = @{}
 $script:retiredAppIds = @{}
 $script:githubCatalogTask = $null
+$script:githubManualRefresh = $false
 $script:githubCatalogRevision = ''
 $script:githubSnapshot = $null
 $script:githubPendingApps = @{}
@@ -642,16 +643,27 @@ function Update-GitHubApplications($catalog, [string]$treeJson) {
 }
 
 function Start-GitHubCatalogCheck([switch]$automatic) {
-    if ($null -ne $script:githubCatalogTask -or $null -ne $script:githubSnapshot) { return }
-    if (-not $automatic) { $script:githubCatalogState = 'Actualisation depuis GitHub…' }
-    $ui.RefreshCatalogButton.IsEnabled = $false
-    try {
-        $script:githubCatalogTask = $githubHttp.GetStringAsync($githubRefsUrl)
-    } catch {
-        $script:githubCatalogState = 'Synchronisation GitHub indisponible. Réessaie dans un instant.'
-        $ui.RefreshCatalogButton.IsEnabled = $true
+    $busy = $null -ne $script:githubCatalogTask -or $null -ne $script:githubSnapshot
+    if ($busy -and ($automatic -or $script:githubManualRefresh)) { return }
+
+    $script:githubManualRefresh = -not $automatic
+    if ($script:githubManualRefresh) {
+        $script:githubCatalogState = 'Actualisation depuis GitHub…'
+        Render-Apps
     }
-    if (-not $automatic -or $null -eq $script:githubCatalogTask) { Render-Apps }
+    try {
+        if ($busy) {
+            # A click takes priority over a pending background check.
+            $catalogHttp.CancelPendingRequests()
+            $script:githubCatalogTask = $null
+            $script:githubSnapshot = $null
+        }
+        $script:githubCatalogTask = $catalogHttp.GetStringAsync($githubRefsUrl)
+    } catch {
+        $script:githubManualRefresh = $false
+        $script:githubCatalogState = 'Synchronisation GitHub indisponible. Clique sur Actualiser pour réessayer.'
+        Render-Apps
+    }
 }
 
 function Assert-GitHubReleaseCurrent($release) {
@@ -691,8 +703,8 @@ function Receive-GitHubResults {
                 if ($revision -cne $script:githubCatalogRevision) {
                     $script:githubSnapshot = @{
                         Revision = $revision
-                        Catalog = $githubHttp.GetStringAsync("$githubRawUrl/$revision/apps-catalog.json")
-                        Tree = $githubHttp.GetStringAsync("$githubTreesUrl/${revision}?recursive=1")
+                        Catalog = $catalogHttp.GetStringAsync("$githubRawUrl/$revision/apps-catalog.json")
+                        Tree = $catalogHttp.GetStringAsync("$githubTreesUrl/${revision}?recursive=1")
                     }
                     return
                 }
@@ -704,10 +716,13 @@ function Receive-GitHubResults {
                 $changed = $true
             }
             $script:githubCatalogState = Remove-RetiredPacks
+            if ($script:githubManualRefresh -and -not $script:githubCatalogState) {
+                $script:githubCatalogState = 'Catalogue GitHub à jour.'
+            }
         } catch {
-            $script:githubCatalogState = 'Synchronisation GitHub indisponible. Réessaie dans un instant.'
+            $script:githubCatalogState = 'Synchronisation GitHub indisponible. Clique sur Actualiser pour réessayer.'
         }
-        $ui.RefreshCatalogButton.IsEnabled = $true
+        $script:githubManualRefresh = $false
         if ($changed) { $script:appModels = @(Get-CardModels) }
         if ($changed -or $previousState -ne $script:githubCatalogState) { Render-Apps }
     }
@@ -1033,11 +1048,15 @@ try {
     Render-Apps
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
     $githubHttp = [Net.Http.HttpClient]::new()
-    $githubHttp.DefaultRequestHeaders.UserAgent.ParseAdd("MY-APPS/$AppVersion")
-    $githubHttp.DefaultRequestHeaders.CacheControl = [Net.Http.Headers.CacheControlHeaderValue]::new()
-    $githubHttp.DefaultRequestHeaders.CacheControl.NoCache = $true
+    $catalogHttp = [Net.Http.HttpClient]::new()
+    foreach ($client in @($githubHttp, $catalogHttp)) {
+        $client.DefaultRequestHeaders.UserAgent.ParseAdd("MY-APPS/$AppVersion")
+        $client.DefaultRequestHeaders.CacheControl = [Net.Http.Headers.CacheControlHeaderValue]::new()
+        $client.DefaultRequestHeaders.CacheControl.NoCache = $true
+        $client.MaxResponseContentBufferSize = 100MB
+    }
     $githubHttp.Timeout = [TimeSpan]::FromSeconds(40)
-    $githubHttp.MaxResponseContentBufferSize = 100MB
+    $catalogHttp.Timeout = [TimeSpan]::FromSeconds(12)
     $githubTimer = [Windows.Threading.DispatcherTimer]::new()
     $githubTimer.Interval = [TimeSpan]::FromMilliseconds(300)
     $githubTimer.Add_Tick({
@@ -1057,7 +1076,7 @@ try {
     })
     $form.Add_ContentRendered({
         Start-LauncherUpdateCheck
-        Start-GitHubCatalogCheck
+        Start-GitHubCatalogCheck -Automatic
     })
     try {
         $catalogTimer.Start()
@@ -1066,6 +1085,7 @@ try {
     } finally {
         $catalogTimer.Stop()
         $githubTimer.Stop()
+        $catalogHttp.Dispose()
         $githubHttp.Dispose()
     }
 } finally {

@@ -42,7 +42,7 @@ jobs:
           $reader = [Xml.XmlReader]::Create((Join-Path $PWD 'MY_APPS.xaml'))
           try {
               $window = [Windows.Markup.XamlReader]::Load($reader)
-              foreach ($name in @('OnlineUpdateButton', 'LauncherUpdateStatus', 'UpdateButton')) {
+              foreach ($name in @('OnlineUpdateButton', 'LauncherUpdateStatus', 'UpdateButton', 'RefreshCatalogButton')) {
                   if ($null -eq $window.FindName($name)) { throw "Élément introuvable : $name" }
               }
           } finally {

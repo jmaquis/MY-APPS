@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 
 Add-Type -AssemblyName PresentationFramework
 
-$baseVersion = [version]'1.5.2'
+$baseVersion = [version]'1.5.3'
 $versionsPath = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'MY_APPS\VersionsLauncher'
 
 try {

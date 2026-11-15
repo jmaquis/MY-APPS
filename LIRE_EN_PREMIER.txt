@@ -54,7 +54,8 @@ disponibles s’affichent sur l’accueil « Mes applications ». Cliquez sur
 Après l’installation, le bouton « Ouvrir » permet de lancer l’application.
 L’alerte ouvre le catalogue, où les nouveautés et mises à jour sont listées.
 Les applications déjà installées peuvent proposer le bouton « Mettre à jour ».
-Utilisez « Actualiser » dans le catalogue pour interroger GitHub à nouveau.
+Utilisez « Actualiser » sur l’accueil ou dans le catalogue pour vérifier GitHub.
+Le bouton reste disponible pendant la vérification automatique.
 Gardez le même navigateur et profil pour retrouver les données de vos applis.
 
 Une application du catalogue est identifiée par l’id de son pack ZIP.
