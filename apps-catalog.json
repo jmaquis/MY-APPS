@@ -22,9 +22,18 @@
       "source_sha256": "b29dda1b3605db2e56dce1ba84fe4b46dfc9da2241ec406ee3bfb6b0ca0ad05d",
       "tag": "catalogue-23762424b925250a247d8b13",
       "source_blob_sha": "600b72a8284b10b3e0306dd0db2d685ac207c047"
+    },
+    {
+      "id": "fixit-suivi-commercial",
+      "name": "FIXIT • Mon suivi commercial",
+      "version": "1.0.2",
+      "asset": "fixit-suivi-commercial-1.0.2.zip",
+      "sha256": "5e6222eb3e1edd3c56968d278639b1083c8859b9ccbdc8ada9d926917a81c678",
+      "source_file": "FIXIT-suivi-commercial.html",
+      "source_sha256": "d948c2a938cfba54f5a75c35e35b325145d3d92b8e34a2813acefeb5206e0277",
+      "source_blob_sha": "561c305e11575c43c919f32b967d3a93bd641bab",
+      "tag": "catalogue-dfab9893b85225fcbf40232f"
     }
   ],
-  "retired": {
-    "fixit-suivi-commercial": "1.0.1"
-  }
+  "retired": {}
 }
