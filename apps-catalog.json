@@ -9,7 +9,8 @@
       "sha256": "40f04b455db98323a610d4885fb283b039e4bcdaeb70e1ed7a352087bbfdfa03",
       "source_file": "Carnet_Auto.html",
       "source_sha256": "5614489de6140d64b54468f8f188d59e5cf6c71983fb45228ab74b9762d49031",
-      "tag": "catalogue-5b54eba31d46b0ebb83c30e9"
+      "tag": "catalogue-5b54eba31d46b0ebb83c30e9",
+      "source_blob_sha": "abcee8d40f8e3239885230b6646f05bdd27d1135"
     },
     {
       "id": "carnet-de-sante-2",
@@ -19,7 +20,8 @@
       "sha256": "e042c7503268254f9f7d2d35db9607ef1614bee0e2688c4a398f3074f745af22",
       "source_file": "Carnet_de_sante(2).html",
       "source_sha256": "b29dda1b3605db2e56dce1ba84fe4b46dfc9da2241ec406ee3bfb6b0ca0ad05d",
-      "tag": "catalogue-23762424b925250a247d8b13"
+      "tag": "catalogue-23762424b925250a247d8b13",
+      "source_blob_sha": "600b72a8284b10b3e0306dd0db2d685ac207c047"
     }
   ],
   "retired": {
